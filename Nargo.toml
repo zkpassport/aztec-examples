@@ -1,0 +1,2 @@
+[workspace]
+members = ["contracts/age_gate_contract", "contracts/nationality_gate_contract"]

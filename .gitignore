@@ -1,0 +1,5 @@
+target/
+# `aztec codegen` scratch file, written to the cwd it is invoked from
+codegenCache.json
+# The registry artifact and proof fixture scripts/fetch-zkpassport.sh fetches
+zkpassport/

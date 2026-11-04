@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # .aztecrc pins the toolchain, the file `aztec-up use` and `aztec-up env` read locally. The
+      # aztec-nr tags in the Nargo manifests must name the same release.
+      - name: Read Aztec version
+        id: aztec-version
+        run: |
+          VERSION=$(tr -d '[:space:]' < .aztecrc)
+          test -n "$VERSION"
+          stale=$(git ls-files '**/Nargo.toml' | xargs grep -n 'aztec-nr' | grep -v -F "tag = \"v$VERSION\"" || true)
+          if [ -n "$stale" ]; then
+            echo "::error::aztec-nr tags that do not match .aztecrc ($VERSION):"
+            echo "$stale"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Aztec toolchain
+        id: aztec-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.aztec
+          key: aztec-${{ runner.os }}-${{ steps.aztec-version.outputs.version }}
+
+      - name: Install Aztec toolchain
+        if: steps.aztec-cache.outputs.cache-hit != 'true'
+        env:
+          VERSION: ${{ steps.aztec-version.outputs.version }}
+        run: |
+          export CI=1
+          curl -fsSL "https://install.aztec-labs.com/${VERSION}/install" | bash
+
+      - name: Add Aztec to PATH
+        run: |
+          V="${{ steps.aztec-version.outputs.version }}"
+          echo "$HOME/.aztec/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.aztec/versions/$V/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch the registry artifact and the age fixture
+        run: scripts/fetch-zkpassport.sh
+
+      - name: Check formatting
+        run: aztec-nargo fmt --check
+
+      - name: Compile contracts
+        run: aztec compile
+
+      - name: Run tests
+        run: aztec test
+
+      # The e2e needs a local Aztec network, so CI only typechecks it. Its bindings import the
+      # artifacts compiled and fetched above.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Install e2e dependencies
+        run: npm ci
+        working-directory: scripts
+
+      - name: Typecheck the e2e
+        run: npx tsc --noEmit -p .
+        working-directory: scripts
