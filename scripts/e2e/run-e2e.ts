@@ -1,5 +1,6 @@
 /**
- * Deploys ZKPassportRegistry + AgeGate to a local Aztec network, seeds the
+ * Deploys the local network registry (the ZKPassportRegistry that verify_zkpassport_proof
+ * finds on a local network) + AgeGate to a local Aztec network, seeds the
  * certificate/circuit roots and the accepted VK hash, warps chain time past the
  * registry's 24h DelayedPublicMutable delay, and then executes a real private
  * `claim()` transaction whose proof is produced by the local PXE's client-IVC
@@ -17,6 +18,7 @@ import { Capsule } from "@aztec-labs/aztec.js/tx"
 import { createAztecNodeDebugClient } from "@aztec-labs/stdlib/interfaces/client"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
+import { createHash } from "crypto"
 import { readFileSync } from "fs"
 import { AgeGateContract } from "../artifacts/AgeGate.js"
 import { ZKPassportRegistryContract } from "../artifacts/ZKPassportRegistry.js"
@@ -41,7 +43,13 @@ const REGISTRY_CIRCUIT = 2n
 // zkpassport_registry_contract::types::MODE_VALID_WITHIN_WINDOW.
 const MODE_VALID_WITHIN_WINDOW = 3
 
-// Production validity window in seconds, matching L1's registry deployments.
+// The local network registry's salt and validity window, so it lands where
+// verify_zkpassport_proof looks for it: must match zkpassport_registry_contract::
+// local_network_registry's LOCAL_NETWORK_REGISTRY_SALT (sha256_to_field: the digest's first 31
+// bytes) and LOCAL_NETWORK_REGISTRY_VALIDITY_WINDOW.
+const LOCAL_NETWORK_REGISTRY_SALT = Fr.fromHexString(
+  `0x${createHash("sha256").update("ZKPASSPORT::AZTEC::LOCAL_NETWORK_REGISTRY").digest().subarray(0, 31).toString("hex")}`,
+)
 const VALIDITY_WINDOW = 86400n
 
 const VK_FIELDS = 115
@@ -105,6 +113,7 @@ async function main() {
     pxe: { proverEnabled },
   })
 
+  // The local network registry's admin and operator are the local network's test accounts 0 and 1.
   const [admin, operator, user] = await registerInitialLocalNetworkAccountsInWallet(wallet)
   log(`accounts admin=${admin} operator=${operator} user=${user}`)
 
@@ -116,12 +125,13 @@ async function main() {
       operator,
       MODE_VALID_WITHIN_WINDOW,
       VALIDITY_WINDOW,
+      { salt: LOCAL_NETWORK_REGISTRY_SALT, universalDeploy: true },
     ).send({ from: admin, wait: WAIT }),
   )
   log(`registry at ${registry.address}`)
 
   const [{ contract: ageGate }] = await timed("deploy age gate", () =>
-    AgeGateContract.deploy(wallet, registry.address).send({ from: admin, wait: WAIT }),
+    AgeGateContract.deploy(wallet).send({ from: admin, wait: WAIT }),
   )
   log(`age gate at ${ageGate.address}`)
 

@@ -21,11 +21,11 @@ zkpassport_aztec_verifier = { git = "https://github.com/zkpassport/zkpassport-pa
 
 The examples also depend on `zkpassport` (`packages/aztec/noir/core`), for the proof fixtures their
 tests use, and on `zkpassport_registry_contract` (`packages/aztec/noir/registry_contract`), for the
-registry interface their tests seed.
+local network registry their tests deploy and seed.
 
-On a network with a ZKPassport registry, `verify_zkpassport_proof` finds it by the chain id. The
-examples call `verify_zkpassport_proof_with_registry` and take the registry as a constructor
-argument, so their tests and the e2e can deploy one of their own.
+`verify_zkpassport_proof` finds ZKPassport's registry on the network by its L1 chain id and rollup
+version. In TXE and on a local network that is the local network registry, which the tests and the
+e2e deploy at its fixed address.
 
 ## Running the tests
 
@@ -37,7 +37,7 @@ eval "$(aztec-up env)"
 ```
 
 The tests deploy the registry from `zkpassport/target/`, with
-`env.deploy("zkpassport@zkpassport_registry_contract/ZKPassportRegistry")`.
+`deploy_local_network_registry(&mut env, "zkpassport@zkpassport_registry_contract/ZKPassportRegistry")`.
 `scripts/fetch-zkpassport.sh` puts the registry artifact there, and the age proof fixture the e2e
 uses in `zkpassport/fixtures/`. It builds both from the zkpassport-packages ref the contracts depend
 on, with the toolchain in `.aztecrc`.
@@ -53,9 +53,9 @@ verification opcode. The e2e below verifies a real proof.
 
 ## End-to-end test on a local network
 
-`scripts/e2e/run-e2e.ts` deploys the registry and the age gate to a local Aztec network, seeds the
-registry, makes a real `claim()` transaction with the age fixture, and checks that a second claim
-with the same passport and a claim with a tampered proof both fail.
+`scripts/e2e/run-e2e.ts` deploys the local network registry and the age gate to a local Aztec
+network, seeds the registry, makes a real `claim()` transaction with the age fixture, and checks
+that a second claim with the same passport and a claim with a tampered proof both fail.
 
 ```bash
 aztec start --local-network   # in another shell

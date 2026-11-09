@@ -15,89 +15,39 @@ use zkpassport::fixtures::proof::{
     AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
 use zkpassport_aztec_verifier::constants::{DISCLOSE_CAPSULE_SLOT, PROOF_CAPSULE_SLOT};
-use zkpassport_registry_contract::{
-    types::{MODE_VALID_WITHIN_WINDOW, REGISTRY_CERTIFICATE, REGISTRY_CIRCUIT},
-    ZKPassportRegistry,
+use zkpassport_registry_contract::local_network_registry::{
+    deploy_local_network_registry, seed_local_network_registry,
 };
 
 // Must match NationalityGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.0.1").
 global CIRCUIT_MANIFEST_VERSION: Field =
     0x0000000000010000000000000000000000000000000000000000000000000000;
 
-pub struct Actors {
-    pub registry: AztecAddress,
-    pub admin: AztecAddress,
-    pub operator: AztecAddress,
-}
+// Deploys the local network registry seeded with the age fixture's roots and vk, which the blobs
+// below keep, and NationalityGate.
+unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
+    let mut env = TestEnvironment::new();
 
-unconstrained fn deploy_registry(env: &mut TestEnvironment) -> Actors {
-    let admin = env.create_light_account();
-    let operator = env.create_light_account();
-    let registry = env
-        .deploy("zkpassport@zkpassport_registry_contract/ZKPassportRegistry")
-        .with_public_initializer(
-            admin,
-            ZKPassportRegistry::interface().constructor(
-                admin,
-                operator,
-                MODE_VALID_WITHIN_WINDOW,
-                86400,
-            ),
-        );
-    Actors { registry, admin, operator }
-}
-
-// Seeds the registry with the age fixture's roots and vk, which the blobs below keep.
-unconstrained fn seed_for_fixture(env: &mut TestEnvironment) -> AztecAddress {
-    let deployed_registry = deploy_registry(env);
-    let roots_valid_from = AGE_FIXTURE_CURRENT_DATE - 100;
-
-    let _ = env.call_public(
-        deployed_registry.operator,
-        ZKPassportRegistry::at(deployed_registry.registry).update_root(
-            REGISTRY_CERTIFICATE,
-            AGE_FIXTURE_CERT_ROOT,
-            0,
-            roots_valid_from,
-        ),
+    let _ = deploy_local_network_registry(
+        &mut env,
+        "zkpassport@zkpassport_registry_contract/ZKPassportRegistry",
     );
-
-    let _ = env.call_public(
-        deployed_registry.operator,
-        ZKPassportRegistry::at(deployed_registry.registry).update_root(
-            REGISTRY_CIRCUIT,
-            AGE_FIXTURE_CIRCUIT_ROOT,
-            0,
-            roots_valid_from,
-        ),
-    );
-
-    let _ = env.call_public(
-        deployed_registry.admin,
-        ZKPassportRegistry::at(deployed_registry.registry).add_accepted_vk(
-            CIRCUIT_MANIFEST_VERSION,
-            AGE_FIXTURE_VK_HASH,
-        ),
-    );
-
-    let _ = env.call_public(
-        deployed_registry.admin,
-        ZKPassportRegistry::at(deployed_registry.registry).set_version_status(
-            CIRCUIT_MANIFEST_VERSION,
-            true,
-        ),
+    seed_local_network_registry(
+        &mut env,
+        CIRCUIT_MANIFEST_VERSION,
+        AGE_FIXTURE_CERT_ROOT,
+        AGE_FIXTURE_CIRCUIT_ROOT,
+        AGE_FIXTURE_VK_HASH,
+        AGE_FIXTURE_CURRENT_DATE - 100,
     );
 
     // The registry's 24h delay counts from TXE's start, real wall-clock time, and time only moves
     // forward. The fixture is dated 2050-01-01, so one jump lands every scheduled change and
     // keeps the proof inside the 7-day validity period.
-    env.set_next_block_timestamp(AGE_FIXTURE_CURRENT_DATE + 86401);
-    env.mine_block();
+    env.mine_block_at(AGE_FIXTURE_CURRENT_DATE + 86401);
 
-    env.deploy("NationalityGate").with_public_initializer(
-        deployed_registry.admin,
-        NationalityGate::interface().constructor(deployed_registry.registry),
-    )
+    let gate = env.deploy("NationalityGate").without_initializer();
+    (env, gate)
 }
 
 // A passport MRZ disclosing its document type ("P<") and nationality, nothing else
@@ -163,8 +113,7 @@ unconstrained fn deliver_capsules(
 
 #[test]
 unconstrained fn claim_succeeds_with_accepted_nationality() {
-    let mut env = TestEnvironment::new();
-    let gate = seed_for_fixture(&mut env);
+    let (mut env, gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
 
@@ -184,8 +133,7 @@ unconstrained fn claim_succeeds_with_accepted_nationality() {
 
 #[test(should_fail_with = "nationality not accepted")]
 unconstrained fn claim_with_other_nationality_fails() {
-    let mut env = TestEnvironment::new();
-    let gate = seed_for_fixture(&mut env);
+    let (mut env, gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
 
@@ -204,8 +152,7 @@ unconstrained fn claim_with_other_nationality_fails() {
 // The proof discloses DEU; the sender puts an FRA payload in the disclose capsule.
 #[test(should_fail_with = "param commitment mismatch")]
 unconstrained fn claim_with_substituted_payload_fails() {
-    let mut env = TestEnvironment::new();
-    let gate = seed_for_fixture(&mut env);
+    let (mut env, gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
 
@@ -224,8 +171,7 @@ unconstrained fn claim_with_substituted_payload_fails() {
 
 #[test(should_fail_with = "param commitment mismatch")]
 unconstrained fn claim_with_proof_without_disclose_fails() {
-    let mut env = TestEnvironment::new();
-    let gate = seed_for_fixture(&mut env);
+    let (mut env, gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
 
@@ -243,8 +189,7 @@ unconstrained fn claim_with_proof_without_disclose_fails() {
 
 #[test(should_fail_with = "missing disclose capsule")]
 unconstrained fn claim_without_disclose_capsule_fails() {
-    let mut env = TestEnvironment::new();
-    let gate = seed_for_fixture(&mut env);
+    let (mut env, gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
 

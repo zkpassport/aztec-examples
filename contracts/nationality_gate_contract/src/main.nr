@@ -5,15 +5,15 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract NationalityGate {
     use aztec::{
-        macros::{functions::{external, initializer, only_self, view}, storage::storage},
+        macros::{functions::{external, only_self, view}, storage::storage},
         protocol::{address::AztecAddress, traits::ToField},
-        state_vars::{Map, PublicImmutable, PublicMutable},
+        state_vars::{Map, PublicMutable},
     };
     use zkpassport_aztec_verifier::commitments::bind_user_address_commitment;
     use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
     use zkpassport_aztec_verifier::disclosed_data::disclosed_nationality;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof_with_registry,
+        emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof,
     };
 
     // The nationality the badge is for, as the MRZ writes it
@@ -29,14 +29,7 @@ pub contract NationalityGate {
 
     #[storage]
     struct Storage<Context> {
-        registry: PublicImmutable<AztecAddress, Context>,
         badges: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
-    }
-
-    #[external("public")]
-    #[initializer]
-    fn constructor(registry: AztecAddress) {
-        self.storage.registry.initialize(registry);
     }
 
     /// Claim the badge for `user`: verifies a ZKPassport proof (outer_count_5, param
@@ -48,8 +41,6 @@ pub contract NationalityGate {
     /// nationality: passports and ID cards keep the nationality at different MRZ offsets.
     #[external("private")]
     fn claim(user: AztecAddress) {
-        let registry = self.storage.registry.read();
-
         let config = ServiceConfig {
             version: CIRCUIT_MANIFEST_VERSION,
             domain: DOMAIN,
@@ -63,15 +54,9 @@ pub contract NationalityGate {
         let expected = BoundedVec::from_array([bind_user_address_commitment(user.to_field())]);
 
         // The capsules ride in the sender's PXE, so they are scoped to the sender, who may be a
-        // relayer, not `user`. The registry is a constructor argument so the tests can deploy
-        // their own: on a network with a ZKPassport registry, verify_zkpassport_proof finds it.
-        let verified = verify_zkpassport_proof_with_registry::<5>(
-            self.context,
-            registry,
-            self.msg_sender(),
-            config,
-            expected,
-        );
+        // relayer, not `user`.
+        let verified =
+            verify_zkpassport_proof::<5>(self.context, self.msg_sender(), config, expected);
 
         let disclosure = verified.disclosure.unwrap();
         let nationality = disclosed_nationality(disclosure.mask, disclosure.bytes);

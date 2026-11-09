@@ -11,7 +11,11 @@ use zkpassport::fixtures::proof::{
     AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
 use zkpassport_registry_contract::{
-    types::{MODE_VALID_WITHIN_WINDOW, REGISTRY_CERTIFICATE, REGISTRY_CIRCUIT},
+    local_network_registry::{
+        deploy_local_network_registry, LOCAL_NETWORK_REGISTRY_ADDRESS, LOCAL_NETWORK_REGISTRY_ADMIN,
+        seed_local_network_registry,
+    },
+    types::{INITIAL_DELAY, REGISTRY_CERTIFICATE},
     ZKPassportRegistry,
 };
 
@@ -20,89 +24,30 @@ use zkpassport_registry_contract::{
 global CIRCUIT_MANIFEST_VERSION: Field =
     0x0000000000010000000000000000000000000000000000000000000000000000;
 
-pub struct Actors {
-    pub registry: AztecAddress,
-    pub admin: AztecAddress,
-    pub operator: AztecAddress,
-}
+// Deploys the local network registry seeded with the age fixture's roots and vk, and AgeGate.
+unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
+    let mut env = TestEnvironment::new();
 
-unconstrained fn deploy_registry(env: &mut TestEnvironment) -> Actors {
-    let admin = env.create_light_account();
-    let operator = env.create_light_account();
-    let registry = env
-        .deploy("zkpassport@zkpassport_registry_contract/ZKPassportRegistry")
-        .with_public_initializer(
-            admin,
-            ZKPassportRegistry::interface().constructor(
-                admin,
-                operator,
-                MODE_VALID_WITHIN_WINDOW,
-                86400,
-            ),
-        );
-    Actors { registry, admin, operator }
-}
-
-unconstrained fn seed_for_fixture(env: &mut TestEnvironment) -> (Actors, AztecAddress) {
-    let deployed_registry = deploy_registry(env);
-    let roots_valid_from = AGE_FIXTURE_CURRENT_DATE - 100;
-
-    let _ = env.call_public(
-        deployed_registry.operator,
-        ZKPassportRegistry::at(deployed_registry.registry).update_root(
-            REGISTRY_CERTIFICATE,
-            AGE_FIXTURE_CERT_ROOT,
-            0,
-            roots_valid_from,
-        ),
+    let _ = deploy_local_network_registry(
+        &mut env,
+        "zkpassport@zkpassport_registry_contract/ZKPassportRegistry",
+    );
+    seed_local_network_registry(
+        &mut env,
+        CIRCUIT_MANIFEST_VERSION,
+        AGE_FIXTURE_CERT_ROOT,
+        AGE_FIXTURE_CIRCUIT_ROOT,
+        AGE_FIXTURE_VK_HASH,
+        AGE_FIXTURE_CURRENT_DATE - 100,
     );
 
-    let _ = env.call_public(
-        deployed_registry.operator,
-        ZKPassportRegistry::at(deployed_registry.registry).update_root(
-            REGISTRY_CIRCUIT,
-            AGE_FIXTURE_CIRCUIT_ROOT,
-            0,
-            roots_valid_from,
-        ),
-    );
+    // The registry's 24h delay counts from TXE's start, real wall-clock time, and time only moves
+    // forward. The fixture is dated 2050-01-01, so one jump lands every scheduled change and
+    // keeps the proof inside the 7-day validity period.
+    env.mine_block_at(AGE_FIXTURE_CURRENT_DATE + 86401);
 
-    let _ = env.call_public(
-        deployed_registry.admin,
-        ZKPassportRegistry::at(deployed_registry.registry).add_accepted_vk(
-            CIRCUIT_MANIFEST_VERSION,
-            AGE_FIXTURE_VK_HASH,
-        ),
-    );
-
-    let _ = env.call_public(
-        deployed_registry.admin,
-        ZKPassportRegistry::at(deployed_registry.registry).set_version_status(
-            CIRCUIT_MANIFEST_VERSION,
-            true,
-        ),
-    );
-
-    // --- DPM landing + freshness anchor -------------------------------------------------------
-    // The schedule_value_change calls just above run at TXE's session-start time, which is REAL
-    // wall-clock "now" (call it T0) and can only move forward. The fixture is future-dated
-    // (AGE_FIXTURE_CURRENT_DATE = 2050-01-01) precisely so one forward jump can satisfy both:
-    //   - DPM landing: anchor_ts >= T0 + 86400 (the 24h delay counts from T0) — any 2050 target
-    //     clears it;
-    //   - freshness (zkpassport_aztec_verifier::verify::verify_zkpassport_proof):
-    //       current_date <= anchor_ts + 3600   AND   current_date + 604800 > anchor_ts
-    //     and anchor_ts = AGE_FIXTURE_CURRENT_DATE + 86401 sits well inside that 7-day window.
-    // This is deterministic until real time reaches the year 2050.
-    env.set_next_block_timestamp(AGE_FIXTURE_CURRENT_DATE + 86401);
-    env.mine_block();
-    // -------------------------------------------------------------------------------------------
-
-    let age_gate = env.deploy("AgeGate").with_public_initializer(
-        deployed_registry.admin,
-        AgeGate::interface().constructor(deployed_registry.registry),
-    );
-
-    (deployed_registry, age_gate)
+    let age_gate = env.deploy("AgeGate").without_initializer();
+    (env, age_gate)
 }
 
 // The capsule is scoped to the account that will send the claim transaction (the capsule
@@ -128,8 +73,7 @@ unconstrained fn deliver_capsule(
 // relayer may carry the transaction.
 #[test]
 unconstrained fn claim_succeeds_with_fixture() {
-    let mut env = TestEnvironment::new();
-    let (_deployed_registry, age_gate) = seed_for_fixture(&mut env);
+    let (mut env, age_gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
 
     let relayer = env.create_light_account();
@@ -148,8 +92,7 @@ unconstrained fn claim_succeeds_with_fixture() {
 // and claimed by an address the proof was NOT bound to.
 #[test(should_fail_with = "param commitment mismatch")]
 unconstrained fn claim_for_unbound_address_fails() {
-    let mut env = TestEnvironment::new();
-    let (_deployed_registry, age_gate) = seed_for_fixture(&mut env);
+    let (mut env, age_gate) = setup();
 
     let thief = env.create_light_account();
     deliver_capsule(&mut env, age_gate, thief);
@@ -158,8 +101,7 @@ unconstrained fn claim_for_unbound_address_fails() {
 
 #[test(should_fail_with = "missing zkpassport proof capsule")]
 unconstrained fn claim_without_capsule_fails() {
-    let mut env = TestEnvironment::new();
-    let (_deployed_registry, age_gate) = seed_for_fixture(&mut env);
+    let (mut env, age_gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
 
@@ -168,20 +110,17 @@ unconstrained fn claim_without_capsule_fails() {
 
 #[test(should_fail_with = "invalid certificate registry root")]
 unconstrained fn claim_fails_when_root_revoked() {
-    let mut env = TestEnvironment::new();
-    let (deployed_registry, age_gate) = seed_for_fixture(&mut env);
+    let (mut env, age_gate) = setup();
 
     let _ = env.call_public(
-        deployed_registry.admin,
-        ZKPassportRegistry::at(deployed_registry.registry).set_revocation_status(
+        LOCAL_NETWORK_REGISTRY_ADMIN,
+        ZKPassportRegistry::at(LOCAL_NETWORK_REGISTRY_ADDRESS).set_revocation_status(
             REGISTRY_CERTIFICATE,
             AGE_FIXTURE_CERT_ROOT,
             true,
         ),
     );
-
-    env.advance_next_block_timestamp_by(86401);
-    env.mine_block();
+    env.mine_block_at(env.last_block_timestamp() + INITIAL_DELAY);
 
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
     let relayer = env.create_light_account();
@@ -194,8 +133,7 @@ unconstrained fn claim_fails_when_root_revoked() {
 // asserts), thus we do not specify a fail message.
 #[test(should_fail)]
 unconstrained fn second_claim_same_passport_fails() {
-    let mut env = TestEnvironment::new();
-    let (_deployed_registry, age_gate) = seed_for_fixture(&mut env);
+    let (mut env, age_gate) = setup();
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
 
     let relayer = env.create_light_account();

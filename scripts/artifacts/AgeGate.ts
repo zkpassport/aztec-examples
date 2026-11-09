@@ -47,13 +47,13 @@ export class AgeGateContract extends ContractBase {
    * @param instantiation - Optional address-affecting parameters (salt, deployer / universalDeploy, publicKeys).
    *                       Salt defaults to a random value; the deployer is locked lazily from the first send-time `from`.
    */
-  public static deploy(wallet: Wallet, registry: AztecAddressLike, instantiation?: DeployInstantiationOptions) {
+  public static deploy(wallet: Wallet, instantiation?: DeployInstantiationOptions) {
     return DeployMethod.create<AgeGateContract>(
       wallet,
       {
         artifact: AgeGateContractArtifact,
         postDeployCtor: (instance, wallet) => AgeGateContract.at(instance.address, wallet),
-        args: [registry],
+        args: [],
       },
       instantiation,
     );
@@ -95,15 +95,12 @@ export class AgeGateContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'registry' | 'badges'> {
+  public static get storage(): ContractStorageLayout<'badges'> {
       return {
-        registry: {
+        badges: {
       slot: new Fr(1n),
-    },
-badges: {
-      slot: new Fr(3n),
     }
-      } as ContractStorageLayout<'registry' | 'badges'>;
+      } as ContractStorageLayout<'badges'>;
     }
     
 
@@ -112,9 +109,6 @@ badges: {
     
     /** claim(user: struct) */
     claim: ((user: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
-
-    /** constructor(registry: struct) */
-    constructor: ((registry: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** has_badge(user: struct) */
     has_badge: ((user: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

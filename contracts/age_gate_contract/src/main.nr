@@ -5,14 +5,14 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract AgeGate {
     use aztec::{
-        macros::{functions::{external, initializer, only_self, view}, storage::storage},
+        macros::{functions::{external, only_self, view}, storage::storage},
         protocol::{address::AztecAddress, traits::ToField},
-        state_vars::{Map, PublicImmutable, PublicMutable},
+        state_vars::{Map, PublicMutable},
     };
     use zkpassport_aztec_verifier::commitments::{age_commitment, bind_user_address_commitment};
     use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof_with_registry,
+        emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof,
     };
 
     global MIN_AGE: u8 = 18;
@@ -29,16 +29,9 @@ pub contract AgeGate {
 
     #[storage]
     struct Storage<Context> {
-        registry: PublicImmutable<AztecAddress, Context>,
         // The 18+ badge: a public, soulbound flag per address. The passport proof that earns
         // it stays private; what becomes public is only that `user` holds the badge.
         badges: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
-    }
-
-    #[external("public")]
-    #[initializer]
-    fn constructor(registry: AztecAddress) {
-        self.storage.registry.initialize(registry);
     }
 
     /// Claim the 18+ badge for `user`: verifies a ZKPassport proof (outer_count_5, param
@@ -49,8 +42,6 @@ pub contract AgeGate {
     /// ZKPassport to bind that address when the proof was made).
     #[external("private")]
     fn claim(user: AztecAddress) {
-        let registry = self.storage.registry.read();
-
         let config = ServiceConfig {
             version: CIRCUIT_MANIFEST_VERSION,
             domain: DOMAIN,
@@ -67,15 +58,9 @@ pub contract AgeGate {
         ]);
 
         // The capsule rides in the sender's PXE, so it is scoped to the sender — who may be a
-        // relayer, not `user`. The registry is a constructor argument so the tests can deploy
-        // their own: on a network with a ZKPassport registry, verify_zkpassport_proof finds it.
-        let verified = verify_zkpassport_proof_with_registry::<5>(
-            self.context,
-            registry,
-            self.msg_sender(),
-            config,
-            expected,
-        );
+        // relayer, not `user`.
+        let verified =
+            verify_zkpassport_proof::<5>(self.context, self.msg_sender(), config, expected);
 
         // Make sure this can only be done once per passport
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
