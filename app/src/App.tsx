@@ -18,6 +18,7 @@ type Flow =
 export function App() {
   const [account, setAccount] = useState(loadAccount)
   const [mode, setMode] = useState<GateMode>("dev")
+  const [sourceChain, setSourceChain] = useState<string | undefined>()
   const [badge, setBadge] = useState<boolean | undefined>()
   const [flow, setFlow] = useState<Flow>({ step: "idle" })
   const [order, setOrder] = useState<string | undefined>()
@@ -30,12 +31,21 @@ export function App() {
   }, [account, mode])
 
   useEffect(() => {
+    fetch("/api/network")
+      .then((response) => response.json())
+      .then((network: { sourceChain: string }) => setSourceChain(network.sourceChain))
+      .catch(() => setSourceChain(undefined))
+  }, [])
+
+  useEffect(() => {
     refreshBadge().catch(() => setBadge(false))
   }, [refreshBadge])
 
   async function verify() {
     setFlow({ step: "idle" })
-    await requestAgeProof(account, mode === "dev", async (event) => {
+    // The proof must use the registries the network's ZKPassport registry mirrors; Sepolia's need
+    // the SDK's dev mode. The gate decides whether mock passports are accepted.
+    await requestAgeProof(account, sourceChain === "ethereum_sepolia", async (event) => {
       if (event.kind === "url") {
         setFlow({
           step: "scan",
@@ -142,8 +152,8 @@ export function App() {
       </main>
 
       <footer className="footer">
-        A demo of ZKPassport on the Aztec testnet. Proofs are verified by an Aztec contract, and the
-        badge is public; the passport data behind it never leaves your phone.
+        A demo of ZKPassport on Aztec. Proofs are verified by an Aztec contract, and the badge is
+        public; the passport data behind it never leaves your phone.
       </footer>
     </div>
   )

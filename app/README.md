@@ -6,8 +6,10 @@ that they are 18 or older. The proof is bound to the user's Aztec address and ve
 18 and nothing else.
 
 - `src/`: the page (Vite + React). It asks the ZKPassport app for an age proof in `compressed` mode,
-  bound to the user's Aztec address, and sends the proof to the relayer. The address is one the page
-  made for this browser, or one the user enters.
+  bound to the user's Aztec address, against the registries the network's ZKPassport registry
+  mirrors (Sepolia's on the testnet and on a local network, which takes the SDK's dev mode), and
+  sends the proof to the relayer. The address is one the page made for this browser, or one the user
+  enters.
 - `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain: one that
   accepts only real passports, and one in dev mode that also accepts ZKPassport's mock passports. It
   then proves and sends each `claim(user)` with the user's proof, and reads badges. Fees go through
@@ -36,4 +38,22 @@ The relayer reads:
   the gates only accept proofs requested from that host;
 - `PORT`: 3001 by default.
 
-`server/deployments.json` records the gates it deployed, by node and domain.
+`server/deployments.json` records the gates it deployed, by node and domain. A recorded gate the
+node no longer has is deployed again.
+
+## Local network
+
+Point the relayer at a local network and it sets one up for proofs made against Sepolia's
+registries, which dev-mode requests use:
+
+```bash
+aztec start --local-network   # in another shell
+AZTEC_NODE_URL=http://localhost:8080 npm run server
+npm run dev
+```
+
+On first start it deploys ZKPassport's registry where `verify_zkpassport_proof` looks for it on a
+local network, with the network's test accounts as admin and operator. It seeds it with Sepolia's
+latest certificate root, the circuit root of circuits 0.22.0 and their `outer_count_5` vk, and warps
+the network's time past the registry's 24-hour delay. The relayer then sends from a test account,
+paying with its Fee Juice.

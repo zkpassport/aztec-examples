@@ -16,23 +16,30 @@ import { SPONSORED_FPC_SALT } from "@aztec-labs/constants"
 import { SponsoredFPCContractArtifact } from "@aztec-labs/noir-contracts.js/SponsoredFPC"
 import { deriveMasterMessageSigningSecretKey } from "@aztec-labs/stdlib/keys"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
+import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
 import type { ProofResult } from "@zkpassport/sdk"
 import { getScopeHash } from "@zkpassport/utils/circuit-matcher"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import AgeGateJson from "../../target/age_gate_contract-AgeGate.json" with { type: "json" }
 import RegistryJson from "../../zkpassport/target/zkpassport_registry_contract-ZKPassportRegistry.json" with { type: "json" }
 import { proofCapsuleFields } from "./capsule"
+import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
 export type GateMode = "live" | "dev"
 
+/** The chain whose registries the network's ZKPassport registry mirrors, which proofs must be made against */
+export type SourceChain = "ethereum" | "ethereum_sepolia"
+
 export interface RelayerConfig {
   nodeUrl: string
-  /** ZKPassport's registry on the network, which the gates verify proofs against */
+  /** ZKPassport's registry on the network; on a local network the relayer deploys its own */
   registryAddress: string
   /** The domain the app is served from, which its ZKPassport requests carry */
   domain: string
   deploymentsPath: string
 }
+
+type Fee = { paymentMethod: SponsoredFeePaymentMethod } | undefined
 
 // Must match zkpassport_aztec_verifier::constants::PROOF_CAPSULE_SLOT
 const PROOF_CAPSULE_SLOT = new Fr(1n)
@@ -50,48 +57,68 @@ export class Relayer {
   private constructor(
     private readonly gates: Record<GateMode, Contract>,
     private readonly account: AztecAddress,
-    private readonly fee: { paymentMethod: SponsoredFeePaymentMethod },
+    private readonly fee: Fee,
+    readonly sourceChain: SourceChain,
   ) {}
 
-  /** Connects a fresh relayer account, and deploys the gates on first start. */
+  /**
+   * Connects the relayer's account and deploys the gates the deployments file does not list on the
+   * node. On a local network the account is a test account, and the relayer sets up the registry.
+   */
   static async start(config: RelayerConfig): Promise<Relayer> {
     const node = createAztecNodeClient(config.nodeUrl)
     const wallet = await EmbeddedWallet.create(config.nodeUrl, {
       ephemeral: true,
       pxe: { proverEnabled: true },
     })
-    const secret = Fr.random()
-    const { address } = await wallet.createSchnorrInitializerlessAccount(
-      secret,
-      new Fr(0),
-      deriveMasterMessageSigningSecretKey(secret),
-    )
+    const registryArtifact = artifact(RegistryJson)
+    const { l1ChainId } = await node.getNodeInfo()
 
-    const fpc = await getContractInstanceFromInstantiationParams(SponsoredFPCContractArtifact, {
-      salt: new Fr(SPONSORED_FPC_SALT),
-    })
-    await wallet.registerContract(fpc, SponsoredFPCContractArtifact)
-    const fee = { paymentMethod: new SponsoredFeePaymentMethod(fpc.address) }
+    let account: AztecAddress
+    let fee: Fee
+    if (l1ChainId === LOCAL_NETWORK_L1_CHAIN_ID) {
+      const [admin, operator] = await registerInitialLocalNetworkAccountsInWallet(wallet)
+      await setUpLocalNetworkRegistry(
+        node,
+        config.nodeUrl,
+        wallet,
+        admin,
+        operator,
+        registryArtifact,
+      )
+      account = admin
+    } else {
+      const secret = Fr.random()
+      account = (
+        await wallet.createSchnorrInitializerlessAccount(
+          secret,
+          new Fr(0),
+          deriveMasterMessageSigningSecretKey(secret),
+        )
+      ).address
+      const fpc = await getContractInstanceFromInstantiationParams(SponsoredFPCContractArtifact, {
+        salt: new Fr(SPONSORED_FPC_SALT),
+      })
+      await wallet.registerContract(fpc, SponsoredFPCContractArtifact)
+      fee = { paymentMethod: new SponsoredFeePaymentMethod(fpc.address) }
 
-    const registry = await node.getContract(AztecAddress.fromStringUnsafe(config.registryAddress))
-    if (!registry) {
-      throw new Error(`no ZKPassport registry at ${config.registryAddress} on ${config.nodeUrl}`)
+      const registry = await node.getContract(AztecAddress.fromStringUnsafe(config.registryAddress))
+      if (!registry) {
+        throw new Error(`no ZKPassport registry at ${config.registryAddress} on ${config.nodeUrl}`)
+      }
+      await wallet.registerContract(registry, registryArtifact)
     }
-    await wallet.registerContract(registry, artifact(RegistryJson))
 
     const ageGate = artifact(AgeGateJson)
     const deployments = readDeployments(config.deploymentsPath)
     const key = `${config.nodeUrl}|${config.domain}`
     const gates = {} as Record<GateMode, Contract>
     for (const mode of ["live", "dev"] as const) {
-      const deployed = deployments[key]?.[mode]
-      if (deployed) {
-        const instance = await node.getContract(AztecAddress.fromStringUnsafe(deployed))
-        if (!instance) {
-          throw new Error(
-            `no AgeGate at ${deployed}; remove ${config.deploymentsPath} to deploy new ones`,
-          )
-        }
+      const recorded = deployments[key]?.[mode]
+      const instance = recorded
+        ? await node.getContract(AztecAddress.fromStringUnsafe(recorded))
+        : undefined
+      if (instance) {
         await wallet.registerContract(instance, ageGate)
         gates[mode] = await Contract.at(instance.address, ageGate, wallet)
       } else {
@@ -101,8 +128,8 @@ export class Relayer {
           domainHash,
           mode === "dev",
         ]).send({
-          from: address,
-          fee,
+          from: account,
+          ...(fee ? { fee } : {}),
           wait: WAIT,
         })
         gates[mode] = contract
@@ -112,7 +139,8 @@ export class Relayer {
       console.log(`${mode} AgeGate: ${gates[mode].address}`)
     }
 
-    return new Relayer(gates, address, fee)
+    // A local network's registry is seeded from Sepolia
+    return new Relayer(gates, account, fee, l1ChainId === 1 ? "ethereum" : "ethereum_sepolia")
   }
 
   gateAddresses(): Record<GateMode, string> {
@@ -128,7 +156,7 @@ export class Relayer {
       const { receipt } = await gate.methods.claim(AztecAddress.fromStringUnsafe(user)).send({
         from: this.account,
         capsules: [capsule],
-        fee: this.fee,
+        ...(this.fee ? { fee: this.fee } : {}),
         wait: WAIT,
       })
       return receipt.txHash.toString()

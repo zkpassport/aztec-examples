@@ -17,8 +17,11 @@ const relayer = await Relayer.start({
 createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", "http://localhost")
-    if (request.method === "GET" && url.pathname === "/api/gates") {
-      return send(response, 200, relayer.gateAddresses())
+    if (request.method === "GET" && url.pathname === "/api/network") {
+      return send(response, 200, {
+        gates: relayer.gateAddresses(),
+        sourceChain: relayer.sourceChain,
+      })
     }
     if (request.method === "GET" && url.pathname === "/api/badge") {
       const badge = await relayer.hasBadge(
@@ -50,9 +53,12 @@ createServer(async (request, response) => {
   }
 }).listen(PORT, () => console.log(`Fortuna relayer on http://localhost:${PORT}`))
 
-/** A failed contract assertion's own text, without the simulation context around it. */
+/** What went wrong in a claim, without the simulation context around it. */
 function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
+  if (message.includes("Nullifier collision")) {
+    return "this passport has already claimed a badge on Fortuna"
+  }
   return message.match(/Assertion failed: ([^'\n]+)/)?.[1]?.trim() ?? message
 }
 
