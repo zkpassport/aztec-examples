@@ -3,10 +3,13 @@
 Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec library in
 [zkpassport-packages](https://github.com/zkpassport/zkpassport-packages/tree/main/packages/aztec).
 
-| Contract                              | What it shows                                                                                                                                                                                                                                   |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user`, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. |
-| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                      |
+| Contract                              | What it shows                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user`, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. A deployment sets the domain its requests come from, and whether it also accepts ZKPassport's mock passports. |
+| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                                                                                                                                    |
+
+[`app/`](app/README.md) is Fortuna, an 18+ prediction market on the Aztec testnet that uses the age
+gate with proofs from the ZKPassport app.
 
 ## Depending on the library
 
