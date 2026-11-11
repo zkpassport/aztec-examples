@@ -10,6 +10,7 @@ use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_BLOB, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
     AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
+use zkpassport_aztec_verifier::verify::scope_hash;
 use zkpassport_registry_contract::{
     local_network_registry::{
         deploy_local_network_registry, LOCAL_NETWORK_REGISTRY_ADDRESS, LOCAL_NETWORK_REGISTRY_ADMIN,
@@ -24,8 +25,16 @@ use zkpassport_registry_contract::{
 global CIRCUIT_MANIFEST_VERSION: Field =
     0x0000001600000000000000000000000000000000000000000000000000000000;
 
-// Deploys the local network registry seeded with the age fixture's roots and vk, and AgeGate.
+// The domain the fixture proof was made for.
+global FIXTURE_DOMAIN: Field = scope_hash("example.com");
+
+// Deploys the local network registry seeded with the age fixture's roots and vk, and an AgeGate
+// for the fixture's domain.
 unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
+    setup_gate(FIXTURE_DOMAIN, false)
+}
+
+unconstrained fn setup_gate(domain: Field, dev_mode: bool) -> (TestEnvironment, AztecAddress) {
     let mut env = TestEnvironment::new();
 
     let _ = deploy_local_network_registry(
@@ -46,7 +55,11 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
     // keeps the proof inside the 7-day validity period.
     env.mine_block_at(AGE_FIXTURE_CURRENT_DATE + 86401);
 
-    let age_gate = env.deploy("AgeGate").without_initializer();
+    let deployer = env.create_light_account();
+    let age_gate = env.deploy("AgeGate").with_public_initializer(
+        deployer,
+        AgeGate::interface().constructor(domain, dev_mode),
+    );
     (env, age_gate)
 }
 
@@ -86,6 +99,29 @@ unconstrained fn claim_succeeds_with_fixture() {
     // The badge goes to the bound address, not to the account that submitted the claim.
     assert(env.view_public(AgeGate::at(age_gate).has_badge(user)));
     assert(!env.view_public(AgeGate::at(age_gate).has_badge(relayer)));
+}
+
+// A gate deployed with dev mode still accepts a real passport's proof.
+#[test]
+unconstrained fn dev_mode_gate_accepts_a_real_passport() {
+    let (mut env, age_gate) = setup_gate(FIXTURE_DOMAIN, true);
+    let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+
+    let relayer = env.create_light_account();
+    deliver_capsule(&mut env, age_gate, relayer);
+    let _ = env.call_private(relayer, AgeGate::at(age_gate).claim(user));
+
+    assert(env.view_public(AgeGate::at(age_gate).has_badge(user)));
+}
+
+#[test(should_fail_with = "wrong service domain")]
+unconstrained fn claim_for_another_domain_fails() {
+    let (mut env, age_gate) = setup_gate(scope_hash("fortuna.example"), false);
+    let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+
+    let relayer = env.create_light_account();
+    deliver_capsule(&mut env, age_gate, relayer);
+    let _ = env.call_private(relayer, AgeGate::at(age_gate).claim(user));
 }
 
 // A proof bound to one address must not claim for another: same capsule blob, delivered for

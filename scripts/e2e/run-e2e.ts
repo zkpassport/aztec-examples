@@ -58,6 +58,11 @@ const PROOF_FIELDS = 458
 // Client-IVC proving is minutes-scale; never let the tx wait time out first.
 const WAIT = { timeout: 3600, interval: 1 } as const
 
+// AgeGate's domain, scope_hash("example.com"): the domain the age fixture was made for.
+const FIXTURE_DOMAIN = Fr.fromHexString(
+  `0x${createHash("sha256").update("example.com").digest().subarray(0, 31).toString("hex")}`,
+)
+
 type Fixture = {
   vkeyFields: string[]
   proof: string[]
@@ -131,7 +136,7 @@ async function main() {
   log(`registry at ${registry.address}`)
 
   const [{ contract: ageGate }] = await timed("deploy age gate", () =>
-    AgeGateContract.deploy(wallet).send({ from: admin, wait: WAIT }),
+    AgeGateContract.deploy(wallet, FIXTURE_DOMAIN, false).send({ from: admin, wait: WAIT }),
   )
   log(`age gate at ${ageGate.address}`)
 
