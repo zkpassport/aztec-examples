@@ -19,9 +19,9 @@ use zkpassport_registry_contract::local_network_registry::{
     deploy_local_network_registry, seed_local_network_registry,
 };
 
-// Must match NationalityGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.0.1").
+// Must match NationalityGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0").
 global CIRCUIT_MANIFEST_VERSION: Field =
-    0x0000000000010000000000000000000000000000000000000000000000000000;
+    0x0000001600000000000000000000000000000000000000000000000000000000;
 
 // Deploys the local network registry seeded with the age fixture's roots and vk, which the blobs
 // below keep, and NationalityGate.

@@ -23,9 +23,9 @@ pub contract NationalityGate {
     global DOMAIN: Field = scope_hash("example.com");
 
     // Circuit-manifest version this app accepts; must match the registry seeding (see test.nr).
-    // This is packed("0.0.1"), the local/dev release the fixtures are built from.
+    // This is packed("0.22.0"), the circuits release the fixtures and the app prove with.
     global CIRCUIT_MANIFEST_VERSION: Field =
-        0x0000000000010000000000000000000000000000000000000000000000000000;
+        0x0000001600000000000000000000000000000000000000000000000000000000;
 
     #[storage]
     struct Storage<Context> {

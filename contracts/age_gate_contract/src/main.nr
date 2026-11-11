@@ -22,10 +22,10 @@ pub contract AgeGate {
 
     // Circuit-manifest version this app accepts; must match the registry seeding (see test.nr).
     // Convention: the CircuitManifest semver packed as 2-byte BE major/minor/patch, left-aligned
-    // bytes32 (the SDK's L1 params.version encoding). This is packed("0.0.1") — the local/dev
-    // release the fixtures are built from.
+    // bytes32 (the SDK's L1 params.version encoding). This is packed("0.22.0"), the
+    // circuits release the fixtures and the ZKPassport app prove with.
     global CIRCUIT_MANIFEST_VERSION: Field =
-        0x0000000000010000000000000000000000000000000000000000000000000000;
+        0x0000001600000000000000000000000000000000000000000000000000000000;
 
     #[storage]
     struct Storage<Context> {

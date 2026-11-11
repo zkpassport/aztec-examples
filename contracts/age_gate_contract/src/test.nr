@@ -19,10 +19,10 @@ use zkpassport_registry_contract::{
     ZKPassportRegistry,
 };
 
-// Must match AgeGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.0.1"), the version the
+// Must match AgeGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0"), the version the
 // app passes to the registry.
 global CIRCUIT_MANIFEST_VERSION: Field =
-    0x0000000000010000000000000000000000000000000000000000000000000000;
+    0x0000001600000000000000000000000000000000000000000000000000000000;
 
 // Deploys the local network registry seeded with the age fixture's roots and vk, and AgeGate.
 unconstrained fn setup() -> (TestEnvironment, AztecAddress) {

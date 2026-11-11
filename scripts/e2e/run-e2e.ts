@@ -33,8 +33,8 @@ const PROOF_CAPSULE_SLOT = new Fr(1n)
 const DELAY = 86400n
 
 // Circuit-manifest version seeded into the registry; must match AgeGate's
-// CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.0.1"), the local/dev release id.
-const CIRCUIT_MANIFEST_VERSION = packCircuitManifestVersion("0.0.1")
+// CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0").
+const CIRCUIT_MANIFEST_VERSION = packCircuitManifestVersion("0.22.0")
 
 // Registry ids: zkpassport_registry_contract::types::REGISTRY_{CERTIFICATE,CIRCUIT}.
 const REGISTRY_CERTIFICATE = 1n
