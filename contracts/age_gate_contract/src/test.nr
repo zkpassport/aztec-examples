@@ -7,9 +7,10 @@ use aztec::{
     test::helpers::test_environment::TestEnvironment,
 };
 use zkpassport::fixtures::proof::{
-    AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_BLOB, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
+    AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
     AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
+use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
 use zkpassport_registry_contract::{
     local_network_registry::{
         deploy_local_network_registry, LOCAL_NETWORK_REGISTRY_ADDRESS, LOCAL_NETWORK_REGISTRY_ADMIN,
@@ -61,7 +62,7 @@ unconstrained fn deliver_capsule(
         capsules::store(
             age_gate,
             zkpassport_aztec_verifier::constants::PROOF_CAPSULE_SLOT,
-            AGE_FIXTURE_BLOB,
+            age_fixture_blob_for_txe(),
             sender,
         );
     });
