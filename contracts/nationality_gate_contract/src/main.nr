@@ -6,12 +6,11 @@ use aztec::macros::aztec;
 pub contract NationalityGate {
     use aztec::{
         macros::{functions::{external, only_self, view}, storage::storage},
-        protocol::{address::AztecAddress, traits::ToField},
+        protocol::address::AztecAddress,
         state_vars::{Map, PublicMutable},
     };
-    use zkpassport_aztec_verifier::commitments::bind_user_address_commitment;
     use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
-    use zkpassport_aztec_verifier::disclosed_data::disclosed_nationality;
+    use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
         emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof,
     };
@@ -48,19 +47,15 @@ pub contract NationalityGate {
             unique_identifier_type: NULLIFIER_TYPE_NON_SALTED,
             validity_period: 7 * 86400,
             dev_mode: false,
-            disclose: true,
         };
 
-        let expected = BoundedVec::from_array([bind_user_address_commitment(user.to_field())]);
+        let query = Query::new().disclose_nationality().bind_user_address(user);
 
         // The capsules ride in the sender's PXE, so they are scoped to the sender, who may be a
         // relayer, not `user`.
-        let verified =
-            verify_zkpassport_proof::<5>(self.context, self.msg_sender(), config, expected);
+        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), config, query);
 
-        let disclosure = verified.disclosure.unwrap();
-        let nationality = disclosed_nationality(disclosure.mask, disclosure.bytes);
-        assert(nationality.nationality == NATIONALITY.as_bytes(), "nationality not accepted");
+        assert(verified.nationality() == NATIONALITY.as_bytes(), "nationality not accepted");
 
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
 

@@ -6,11 +6,11 @@ use aztec::macros::aztec;
 pub contract AgeGate {
     use aztec::{
         macros::{functions::{external, initializer, only_self, view}, storage::storage},
-        protocol::{address::AztecAddress, traits::{Packable, ToField}},
+        protocol::{address::AztecAddress, traits::Packable},
         state_vars::{Map, PublicImmutable, PublicMutable},
     };
-    use zkpassport_aztec_verifier::commitments::{age_commitment, bind_user_address_commitment};
     use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
+    use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
         emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof,
     };
@@ -64,18 +64,13 @@ pub contract AgeGate {
             unique_identifier_type: NULLIFIER_TYPE_NON_SALTED,
             validity_period: 7 * 86400,
             dev_mode: gate.dev_mode,
-            disclose: false,
         };
 
-        let expected = BoundedVec::from_array([
-            age_commitment(MIN_AGE, 0),
-            bind_user_address_commitment(user.to_field()),
-        ]);
+        let query = Query::new().age_min(MIN_AGE).bind_user_address(user);
 
         // The capsule rides in the sender's PXE, so it is scoped to the sender — who may be a
         // relayer, not `user`.
-        let verified =
-            verify_zkpassport_proof::<5>(self.context, self.msg_sender(), config, expected);
+        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), config, query);
 
         // Make sure this can only be done once per passport
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
