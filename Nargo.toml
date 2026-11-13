@@ -1,2 +1,6 @@
 [workspace]
-members = ["contracts/age_gate_contract", "contracts/nationality_gate_contract"]
+members = [
+    "contracts/age_gate_contract",
+    "contracts/nationality_gate_contract",
+    "contracts/sanctions_gate_contract",
+]

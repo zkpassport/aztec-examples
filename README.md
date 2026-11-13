@@ -7,6 +7,12 @@ Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec 
 | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user` on the gate's network, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. |
 | `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                                            |
+| `contracts/sanctions_gate_contract`   | A sanctions-screened gate. `claim(user)` verifies a proof, bound to `user` on the gate's network, that its holder is not on the sanctions lists, and grants the badge once per passport.                                                                              |
+
+The sanctions gate's client asks the ZKPassport SDK for `.sanctions()` and the bind, and stashes the
+sanctions root the proof was screened against, the proof result's
+`committedInputs.exclusion_check_sanctions.rootHash`, in the gate's sanctions capsule
+(`SANCTIONS_CAPSULE_SLOT`, 3) next to the proof capsule.
 
 ## Depending on the library
 
