@@ -11,9 +11,10 @@ use zkpassport::commitments::{age_commitment, disclose_commitment};
 use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
 use zkpassport::disclosed_data::{MRZ_DOC_TYPE_INDEX, TD3_NATIONALITY_INDEX};
 use zkpassport::fixtures::proof::{
-    AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_BLOB, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
+    AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
     AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
+use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
 use zkpassport_aztec_verifier::constants::{DISCLOSE_CAPSULE_SLOT, PROOF_CAPSULE_SLOT};
 use zkpassport_registry_contract::local_network_registry::{
     deploy_local_network_registry, seed_local_network_registry,
@@ -81,7 +82,7 @@ fn disclose_payload(mask: [bool; 90], bytes: [u8; 90]) -> [Field; 180] {
 // the fixture's roots, date, vk and bound address. Its proof bytes no longer match its public
 // inputs, which these tests cannot notice: TXE does not run the recursion opcode.
 fn disclose_blob(mask: [bool; 90], bytes: [u8; 90]) -> [Field; 583] {
-    let mut blob = AGE_FIXTURE_BLOB;
+    let mut blob = age_fixture_blob_for_txe();
     let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
     let mut swapped = 0;
     for i in params_start..params_start + 2 {
@@ -180,7 +181,7 @@ unconstrained fn claim_with_proof_without_disclose_fails() {
         &mut env,
         gate,
         relayer,
-        AGE_FIXTURE_BLOB,
+        age_fixture_blob_for_txe(),
         Option::some(disclose_payload(mask, bytes)),
     );
 

@@ -3,10 +3,10 @@
 Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec library in
 [zkpassport-packages](https://github.com/zkpassport/zkpassport-packages/tree/main/packages/aztec).
 
-| Contract                              | What it shows                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user`, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. A deployment sets the domain its requests come from, and whether it also accepts ZKPassport's mock passports. |
-| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                                                                                                                                    |
+| Contract                              | What it shows                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user` on the gate's network, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. A deployment sets the domain its requests come from, and whether it also accepts ZKPassport's mock passports. |
+| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                                                                                                                                                          |
 
 [`app/`](app/README.md) is Fortuna, an 18+ prediction market on the Aztec testnet that uses the age
 gate with proofs from the ZKPassport app.
@@ -60,6 +60,11 @@ verification opcode. The e2e below verifies a real proof.
 network, seeds the registry, makes a real `claim()` transaction with the age fixture, and checks
 that a second claim with the same passport and a claim with a tampered proof both fail.
 
+Like an app, it takes the registry's artifact and the proof capsule from
+[`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec). The package's registry must
+be the same contract class as the one the contracts' zkpassport-packages ref compiles, so that the
+local network registry lands where `verify_zkpassport_proof` looks for it.
+
 ```bash
 aztec start --local-network   # in another shell
 scripts/fetch-zkpassport.sh
@@ -69,10 +74,9 @@ cd scripts && npm ci && npm run e2e
 
 `AZTEC_NODE_URL` sets the node (default `http://localhost:8080`).
 
-`scripts/artifacts/` holds the TS bindings the e2e uses. After a change to a contract's ABI,
-regenerate them from the repo root:
+`scripts/artifacts/` holds the age gate's TS binding, which the e2e uses. After a change to its ABI,
+regenerate it from the repo root:
 
 ```bash
 aztec codegen target/age_gate_contract-AgeGate.json -o scripts/artifacts
-aztec codegen zkpassport/target -o scripts/artifacts
 ```

@@ -10,7 +10,9 @@
     "@aztec-labs/accounts": "6.0.0",
     "@aztec-labs/aztec.js": "6.0.0",
     "@aztec-labs/stdlib": "6.0.0",
-    "@aztec-labs/wallets": "6.0.0"
+    "@aztec-labs/wallets": "6.0.0",
+    "@zkpassport/aztec": "0.1.0-beta.1",
+    "@zkpassport/utils": "0.40.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
