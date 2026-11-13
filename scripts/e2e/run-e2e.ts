@@ -12,6 +12,7 @@
  *   TAMPERED PROOF REJECTED — a one-bit-flipped proof fails client-side proving
  */
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
+import { Contract } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { Capsule } from "@aztec-labs/aztec.js/tx"
@@ -20,21 +21,24 @@ import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
 import { createHash } from "crypto"
 import { readFileSync } from "fs"
+import {
+  assembleProofCapsule,
+  PROOF_CAPSULE_SLOT,
+  PROOF_FIELDS,
+  VK_FIELDS,
+  ZKPassportRegistryArtifact,
+} from "@zkpassport/aztec"
+import { circuitVersionToBytes32 } from "@zkpassport/utils"
 import { AgeGateContract } from "../artifacts/AgeGate.js"
-import { ZKPassportRegistryContract } from "../artifacts/ZKPassportRegistry.js"
-import { packCircuitManifestVersion } from "./circuit-version.js"
 
 const NODE_URL = process.env.AZTEC_NODE_URL ?? "http://localhost:8080"
-
-// Must match zkpassport::constants::PROOF_CAPSULE_SLOT.
-const PROOF_CAPSULE_SLOT = new Fr(1n)
 
 // Must match zkpassport_registry_contract::types::INITIAL_DELAY.
 const DELAY = 86400n
 
 // Circuit-manifest version seeded into the registry; must match AgeGate's
-// CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0").
-const CIRCUIT_MANIFEST_VERSION = packCircuitManifestVersion("0.22.0")
+// CIRCUIT_MANIFEST_VERSION (main.nr).
+const CIRCUIT_MANIFEST_VERSION = Fr.fromHexString(circuitVersionToBytes32("0.22.0"))
 
 // Registry ids: zkpassport_registry_contract::types::REGISTRY_{CERTIFICATE,CIRCUIT}.
 const REGISTRY_CERTIFICATE = 1n
@@ -51,9 +55,6 @@ const LOCAL_NETWORK_REGISTRY_SALT = Fr.fromHexString(
   `0x${createHash("sha256").update("ZKPASSPORT::AZTEC::LOCAL_NETWORK_REGISTRY").digest().subarray(0, 31).toString("hex")}`,
 )
 const VALIDITY_WINDOW = 86400n
-
-const VK_FIELDS = 115
-const PROOF_FIELDS = 458
 
 // Client-IVC proving is minutes-scale; never let the tx wait time out first.
 const WAIT = { timeout: 3600, interval: 1 } as const
@@ -118,13 +119,14 @@ async function main() {
   log(`accounts admin=${admin} operator=${operator} user=${user}`)
 
   // ---- 1. Deploy -----------------------------------------------------------
+  // The registry from @zkpassport/aztec, the same contract class as the registry the gates'
+  // zkpassport-packages dependency deploys in TXE
   const [{ contract: registry }] = await timed("deploy registry", () =>
-    ZKPassportRegistryContract.deploy(
+    Contract.deploy(
       wallet,
-      admin,
-      operator,
-      MODE_VALID_WITHIN_WINDOW,
-      VALIDITY_WINDOW,
+      ZKPassportRegistryArtifact,
+      [admin, operator, MODE_VALID_WITHIN_WINDOW, VALIDITY_WINDOW],
+      undefined,
       { salt: LOCAL_NETWORK_REGISTRY_SALT, universalDeploy: true },
     ).send({ from: admin, wait: WAIT }),
   )
@@ -191,12 +193,11 @@ async function main() {
   }
 
   // ---- 4. The real claim ---------------------------------------------------
-  const blob = [...FIXTURE.vkeyFields, ...FIXTURE.proof, ...FIXTURE.publicInputs].map((h) =>
-    Fr.fromHexString(h),
-  )
-  if (blob.length !== VK_FIELDS + PROOF_FIELDS + FIXTURE.publicInputs.length) {
-    throw new Error(`unexpected blob length ${blob.length}`)
-  }
+  const blob = assembleProofCapsule({
+    vk: FIXTURE.vkeyFields,
+    proof: FIXTURE.proof,
+    publicInputs: FIXTURE.publicInputs,
+  })
   log(
     `capsule blob: ${blob.length} fields (vk ${VK_FIELDS} + proof ${PROOF_FIELDS} + pi ${FIXTURE.publicInputs.length})`,
   )
@@ -206,7 +207,7 @@ async function main() {
   // so the sender is effectively a relayer and the badge recipient needs no account here.
   const boundUser = AztecAddress.fromFieldUnsafe(Fr.fromHexString(FIXTURE.bindAddress))
   const capsule = (fields: Fr[]) =>
-    new Capsule(ageGate.address, PROOF_CAPSULE_SLOT, fields, user as AztecAddress)
+    new Capsule(ageGate.address, new Fr(PROOF_CAPSULE_SLOT), fields, user as AztecAddress)
 
   // ---- 4a. Tampered proof must fail ----------------------------------------------
   // Flip one bit inside the proof body; vk and public inputs stay valid so every

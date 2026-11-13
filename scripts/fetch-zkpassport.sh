@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch what the tests and the e2e need from zkpassport-packages, at the ref the contracts depend on:
-# the compiled ZKPassportRegistry artifact (zkpassport/target/) and the age proof fixture
-# (zkpassport/fixtures/).
+# the compiled ZKPassportRegistry artifact the tests deploy (zkpassport/target/) and the age proof
+# fixture the e2e proves with (zkpassport/fixtures/).
 #
 # Usage: scripts/fetch-zkpassport.sh
 # Env: AZTEC, an Aztec toolchain version directory (default ~/.aztec/versions/<.aztecrc>)
