@@ -4,6 +4,6 @@ type = "contract"
 
 [dependencies]
 aztec = { git = "https://github.com/aztec-labs-eng/aztec-nr", tag = "v6.0.0", directory = "aztec" }
-zkpassport_aztec_verifier = { git = "https://github.com/zkpassport/zkpassport-packages", tag = "martin/zkp-608-aztec-a-verify-api-in-the-shape-of-the-sdks", directory = "packages/aztec/noir/verifier" }
-zkpassport = { git = "https://github.com/zkpassport/zkpassport-packages", tag = "martin/zkp-608-aztec-a-verify-api-in-the-shape-of-the-sdks", directory = "packages/aztec/noir/core" }
-zkpassport_registry_contract = { git = "https://github.com/zkpassport/zkpassport-packages", tag = "martin/zkp-608-aztec-a-verify-api-in-the-shape-of-the-sdks", directory = "packages/aztec/noir/registry_contract" }
+zkpassport_aztec_verifier = { git = "https://github.com/zkpassport/zkpassport-packages", tag = "main", directory = "packages/aztec/noir/verifier" }
+zkpassport = { git = "https://github.com/zkpassport/zkpassport-packages", tag = "main", directory = "packages/aztec/noir/core" }
+zkpassport_registry_contract = { git = "https://github.com/zkpassport/zkpassport-packages", tag = "main", directory = "packages/aztec/noir/registry_contract" }
