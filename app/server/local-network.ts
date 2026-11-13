@@ -1,4 +1,3 @@
-import type { ContractArtifact } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import {
   Contract,
@@ -8,6 +7,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { createAztecNodeDebugClient } from "@aztec-labs/stdlib/interfaces/client"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
+import { registerZKPassportRegistry, ZKPassportRegistryArtifact } from "@zkpassport/aztec"
 import { createRegistryClient } from "@zkpassport/registry"
 import { circuitVersionToBytes32 } from "@zkpassport/utils/registry"
 import { createHash } from "node:crypto"
@@ -43,17 +43,16 @@ export async function setUpLocalNetworkRegistry(
   wallet: EmbeddedWallet,
   admin: AztecAddress,
   operator: AztecAddress,
-  artifact: ContractArtifact,
 ): Promise<AztecAddress> {
   const constructorArgs = [admin, operator, MODE_VALID_WITHIN_WINDOW, VALIDITY_WINDOW]
-  const instance = await getContractInstanceFromInstantiationParams(artifact, {
+  const instance = await getContractInstanceFromInstantiationParams(ZKPassportRegistryArtifact, {
     constructorArgs,
     salt: LOCAL_NETWORK_REGISTRY_SALT,
     deployer: AztecAddress.ZERO,
   })
   const deployed = await node.getContract(instance.address)
   if (deployed) {
-    await wallet.registerContract(deployed, artifact)
+    await registerZKPassportRegistry(wallet, node, deployed.address)
     console.log(`Local network registry: ${instance.address}`)
     return instance.address
   }
@@ -61,7 +60,7 @@ export async function setUpLocalNetworkRegistry(
   console.log("Deploying and seeding the local network registry from Sepolia's registries...")
   const { contract: registry } = await Contract.deploy(
     wallet,
-    artifact,
+    ZKPassportRegistryArtifact,
     constructorArgs,
     "constructor",
     {

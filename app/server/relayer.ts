@@ -17,11 +17,11 @@ import { SponsoredFPCContractArtifact } from "@aztec-labs/noir-contracts.js/Spon
 import { deriveMasterMessageSigningSecretKey } from "@aztec-labs/stdlib/keys"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
+import { registerZKPassportRegistry } from "@zkpassport/aztec"
 import type { ProofResult } from "@zkpassport/sdk"
 import { getScopeHash } from "@zkpassport/utils/circuit-matcher"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import AgeGateJson from "../../target/age_gate_contract-AgeGate.json" with { type: "json" }
-import RegistryJson from "../../zkpassport/target/zkpassport_registry_contract-ZKPassportRegistry.json" with { type: "json" }
 import { proofCapsuleFields } from "./capsule"
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
@@ -71,21 +71,13 @@ export class Relayer {
       ephemeral: true,
       pxe: { proverEnabled: true },
     })
-    const registryArtifact = artifact(RegistryJson)
     const { l1ChainId } = await node.getNodeInfo()
 
     let account: AztecAddress
     let fee: Fee
     if (l1ChainId === LOCAL_NETWORK_L1_CHAIN_ID) {
       const [admin, operator] = await registerInitialLocalNetworkAccountsInWallet(wallet)
-      await setUpLocalNetworkRegistry(
-        node,
-        config.nodeUrl,
-        wallet,
-        admin,
-        operator,
-        registryArtifact,
-      )
+      await setUpLocalNetworkRegistry(node, config.nodeUrl, wallet, admin, operator)
       account = admin
     } else {
       const secret = Fr.random()
@@ -102,11 +94,7 @@ export class Relayer {
       await wallet.registerContract(fpc, SponsoredFPCContractArtifact)
       fee = { paymentMethod: new SponsoredFeePaymentMethod(fpc.address) }
 
-      const registry = await node.getContract(AztecAddress.fromStringUnsafe(config.registryAddress))
-      if (!registry) {
-        throw new Error(`no ZKPassport registry at ${config.registryAddress} on ${config.nodeUrl}`)
-      }
-      await wallet.registerContract(registry, registryArtifact)
+      await registerZKPassportRegistry(wallet, node, config.registryAddress)
     }
 
     const ageGate = artifact(AgeGateJson)

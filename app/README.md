@@ -13,14 +13,15 @@ that they are 18 or older. The proof is bound to the user's Aztec address and ve
 - `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain: one that
   accepts only real passports, and one in dev mode that also accepts ZKPassport's mock passports. It
   then proves and sends each `claim(user)` with the user's proof, and reads badges. Fees go through
-  the testnet's sponsored fee contract.
+  the testnet's sponsored fee contract. ZKPassport's registry artifact, its registration with the
+  relayer's wallet, the outer vk and the proof capsule come from
+  [`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec).
 
 ## Running it
 
 From the repo root, with the toolchain in `.aztecrc` active (see the root README):
 
 ```bash
-scripts/fetch-zkpassport.sh
 aztec compile
 cd app && npm ci
 npm run server   # the relayer, on port 3001
