@@ -70,7 +70,9 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: scripts/package-lock.json
+          cache-dependency-path: |
+            scripts/package-lock.json
+            app/package-lock.json
 
       - name: Install e2e dependencies
         run: npm ci
@@ -79,3 +81,12 @@ jobs:
       - name: Typecheck the e2e
         run: npx tsc --noEmit -p .
         working-directory: scripts
+
+      # The Fortuna app imports the same compiled and fetched artifacts
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Typecheck and build the app
+        run: npm run build
+        working-directory: app
