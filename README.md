@@ -63,6 +63,11 @@ verification opcode. The e2e below verifies a real proof.
 network, seeds the registry, makes a real `claim()` transaction with the age fixture, and checks
 that a second claim with the same passport and a claim with a tampered proof both fail.
 
+Like an app, it takes the registry's artifact and the proof capsule from
+[`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec). The package's registry must
+be the same contract class as the one the contracts' zkpassport-packages ref compiles, so that the
+local network registry lands where `verify_zkpassport_proof` looks for it.
+
 ```bash
 aztec start --local-network   # in another shell
 scripts/fetch-zkpassport.sh
@@ -72,10 +77,9 @@ cd scripts && npm ci && npm run e2e
 
 `AZTEC_NODE_URL` sets the node (default `http://localhost:8080`).
 
-`scripts/artifacts/` holds the TS bindings the e2e uses. After a change to a contract's ABI,
-regenerate them from the repo root:
+`scripts/artifacts/` holds the age gate's TS binding, which the e2e uses. After a change to its ABI,
+regenerate it from the repo root:
 
 ```bash
 aztec codegen target/age_gate_contract-AgeGate.json -o scripts/artifacts
-aztec codegen zkpassport/target -o scripts/artifacts
 ```
