@@ -8,7 +8,7 @@ use aztec::{
 };
 use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
-    AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
+    AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
 use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
 use zkpassport_aztec_verifier::verify::scope_hash;
@@ -20,11 +20,6 @@ use zkpassport_registry_contract::{
     types::{INITIAL_DELAY, REGISTRY_CERTIFICATE},
     ZKPassportRegistry,
 };
-
-// Must match AgeGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0"), the version the
-// app passes to the registry.
-global CIRCUIT_MANIFEST_VERSION: Field =
-    0x0000001600000000000000000000000000000000000000000000000000000000;
 
 // The domain the fixture proof was made for.
 global FIXTURE_DOMAIN: Field = scope_hash("example.com");
@@ -44,7 +39,7 @@ unconstrained fn setup_gate(domain: Field, dev_mode: bool) -> (TestEnvironment, 
     );
     seed_local_network_registry(
         &mut env,
-        CIRCUIT_MANIFEST_VERSION,
+        AGE_FIXTURE_CIRCUIT_VERSION,
         AGE_FIXTURE_CERT_ROOT,
         AGE_FIXTURE_CIRCUIT_ROOT,
         AGE_FIXTURE_VK_HASH,

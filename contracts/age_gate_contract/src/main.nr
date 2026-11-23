@@ -9,20 +9,12 @@ pub contract AgeGate {
         protocol::{address::AztecAddress, traits::Packable},
         state_vars::{Map, PublicImmutable, PublicMutable},
     };
-    use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof,
+        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof_for_user,
     };
 
     global MIN_AGE: u8 = 18;
-
-    // Circuit-manifest version this app accepts; must match the registry seeding (see test.nr).
-    // Convention: the CircuitManifest semver packed as 2-byte BE major/minor/patch, left-aligned
-    // bytes32 (the SDK's L1 params.version encoding). This is packed("0.22.0"), the
-    // circuits release the fixtures and the ZKPassport app prove with.
-    global CIRCUIT_MANIFEST_VERSION: Field =
-        0x0000001600000000000000000000000000000000000000000000000000000000;
 
     // The service this gate accepts proofs for, set when it is deployed.
     #[derive(Eq, Packable)]
@@ -57,20 +49,15 @@ pub contract AgeGate {
     #[external("private")]
     fn claim(user: AztecAddress) {
         let gate = self.storage.config.read();
-        let config = ServiceConfig {
-            version: CIRCUIT_MANIFEST_VERSION,
-            domain: gate.domain,
-            scope: 0,
-            unique_identifier_type: NULLIFIER_TYPE_NON_SALTED,
-            validity_period: 7 * 86400,
-            dev_mode: gate.dev_mode,
-        };
+        let mut config = ServiceConfig::from_domain_hash(gate.domain);
+        config.dev_mode = gate.dev_mode;
 
-        let query = Query::new().age_min(MIN_AGE).bind_user_address(user);
+        let query = Query::new().age_min(MIN_AGE);
 
         // The capsule rides in the sender's PXE, so it is scoped to the sender — who may be a
         // relayer, not `user`.
-        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), config, query);
+        let verified =
+            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, config, query);
 
         // Make sure this can only be done once per passport
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
