@@ -8,7 +8,7 @@ use aztec::{
 };
 use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
-    AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
+    AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
 use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
 use zkpassport_registry_contract::{
@@ -20,11 +20,6 @@ use zkpassport_registry_contract::{
     ZKPassportRegistry,
 };
 
-// Must match AgeGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0"), the version the
-// app passes to the registry.
-global CIRCUIT_MANIFEST_VERSION: Field =
-    0x0000001600000000000000000000000000000000000000000000000000000000;
-
 // Deploys the local network registry seeded with the age fixture's roots and vk, and AgeGate.
 unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
     let mut env = TestEnvironment::new();
@@ -35,7 +30,7 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
     );
     seed_local_network_registry(
         &mut env,
-        CIRCUIT_MANIFEST_VERSION,
+        AGE_FIXTURE_CIRCUIT_VERSION,
         AGE_FIXTURE_CERT_ROOT,
         AGE_FIXTURE_CIRCUIT_ROOT,
         AGE_FIXTURE_VK_HASH,
