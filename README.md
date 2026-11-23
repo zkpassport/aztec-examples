@@ -69,7 +69,7 @@ Like an app, it takes the registry's artifact and the proof capsule from
 packed from the contracts' zkpassport-packages ref, which may not be published yet, so the package's
 registry is the same contract class as the one the contracts compile, and lands where
 `verify_zkpassport_proof` looks for it. Run `scripts/fetch-zkpassport.sh` before `npm ci`, and
-`npm install` after changing the ref, to update the package-lock.
+`npm install` after changing the ref, in case the packages' dependencies changed.
 
 ```bash
 aztec start --local-network   # in another shell
