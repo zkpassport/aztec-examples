@@ -11,18 +11,17 @@ import {
 import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee"
 import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
-import { Capsule } from "@aztec-labs/aztec.js/tx"
 import { SPONSORED_FPC_SALT } from "@aztec-labs/constants"
 import { SponsoredFPCContractArtifact } from "@aztec-labs/noir-contracts.js/SponsoredFPC"
 import { deriveMasterMessageSigningSecretKey } from "@aztec-labs/stdlib/keys"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
-import { registerZKPassportRegistry } from "@zkpassport/aztec"
-import type { ProofResult } from "@zkpassport/sdk"
+import { registerZKPassportRegistry, toAztecCapsules } from "@zkpassport/aztec"
+import { type AztecNetwork, type ProofResult, ZKPassport } from "@zkpassport/sdk"
+import { getIdFromChain } from "@zkpassport/utils"
 import { getScopeHash } from "@zkpassport/utils/circuit-matcher"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import AgeGateJson from "../../target/age_gate_contract-AgeGate.json" with { type: "json" }
-import { proofCapsuleFields } from "./capsule"
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
 export type GateMode = "live" | "dev"
@@ -41,10 +40,6 @@ export interface RelayerConfig {
 
 type Fee = { paymentMethod: SponsoredFeePaymentMethod } | undefined
 
-// Must match zkpassport_aztec_verifier::constants::PROOF_CAPSULE_SLOT
-const PROOF_CAPSULE_SLOT = new Fr(1n)
-// AgeGate::claim verifies an outer_count_5 proof: the passport's three subproofs, age and bind
-const AGE_GATE_SUBPROOFS = 5
 const WAIT = { timeout: 3600, interval: 2 } as const
 
 /**
@@ -58,7 +53,10 @@ export class Relayer {
     private readonly gates: Record<GateMode, Contract>,
     private readonly account: AztecAddress,
     private readonly fee: Fee,
+    private readonly zkpassport: ZKPassport,
     readonly sourceChain: SourceChain,
+    /** The network a proof must be bound to, if ZKPassport can bind one to this network */
+    readonly network: AztecNetwork | undefined,
   ) {}
 
   /**
@@ -71,7 +69,7 @@ export class Relayer {
       ephemeral: true,
       pxe: { proverEnabled: true },
     })
-    const { l1ChainId } = await node.getNodeInfo()
+    const { l1ChainId, rollupVersion } = await node.getNodeInfo()
 
     let account: AztecAddress
     let fee: Fee
@@ -128,7 +126,14 @@ export class Relayer {
     }
 
     // A local network's registry is seeded from Sepolia
-    return new Relayer(gates, account, fee, l1ChainId === 1 ? "ethereum" : "ethereum_sepolia")
+    const sourceChain = l1ChainId === 1 ? "ethereum" : "ethereum_sepolia"
+    // A bind covers the network by its rollup version, which only Aztec mainnet and testnet have a
+    // name for in a ZKPassport request
+    const network = (["aztec", "aztec_testnet"] as const).find(
+      (name) => getIdFromChain(name) === rollupVersion,
+    )
+    const zkpassport = new ZKPassport(config.domain)
+    return new Relayer(gates, account, fee, zkpassport, sourceChain, network)
   }
 
   gateAddresses(): Record<GateMode, string> {
@@ -139,11 +144,13 @@ export class Relayer {
   claim(mode: GateMode, user: string, proof: ProofResult): Promise<string> {
     const run = this.queue.then(async () => {
       const gate = this.gates[mode]
-      const fields = await proofCapsuleFields(proof, AGE_GATE_SUBPROOFS)
-      const capsule = new Capsule(gate.address, PROOF_CAPSULE_SLOT, fields, this.account)
+      const params = await this.zkpassport.getAztecVerifierParameters({
+        proof,
+        network: this.network,
+      })
       const { receipt } = await gate.methods.claim(AztecAddress.fromStringUnsafe(user)).send({
         from: this.account,
-        capsules: [capsule],
+        capsules: toAztecCapsules(params, gate.address, this.account),
         ...(this.fee ? { fee: this.fee } : {}),
         wait: WAIT,
       })
