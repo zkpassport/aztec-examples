@@ -51,7 +51,15 @@ jobs:
           echo "$HOME/.aztec/bin" >> "$GITHUB_PATH"
           echo "$HOME/.aztec/versions/$V/bin" >> "$GITHUB_PATH"
 
-      - name: Fetch the registry artifact and the age fixture
+      # The fetch packs zkpassport-packages' npm packages with a bun it runs through npx
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Fetch the registry artifact, the age fixture and the npm packages
         run: scripts/fetch-zkpassport.sh
 
       - name: Check formatting
@@ -65,13 +73,6 @@ jobs:
 
       # The e2e needs a local Aztec network, so CI only typechecks it. Its age gate binding imports
       # the artifact compiled above, and the registry comes from @zkpassport/aztec.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: scripts/package-lock.json
-
       - name: Install e2e dependencies
         run: npm ci
         working-directory: scripts

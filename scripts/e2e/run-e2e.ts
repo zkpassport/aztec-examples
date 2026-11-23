@@ -36,10 +36,6 @@ const NODE_URL = process.env.AZTEC_NODE_URL ?? "http://localhost:8080"
 // Must match zkpassport_registry_contract::types::INITIAL_DELAY.
 const DELAY = 86400n
 
-// Circuit-manifest version seeded into the registry; must match AgeGate's
-// CIRCUIT_MANIFEST_VERSION (main.nr).
-const CIRCUIT_MANIFEST_VERSION = Fr.fromHexString(circuitVersionToBytes32("0.22.0"))
-
 // Registry ids: zkpassport_registry_contract::types::REGISTRY_{CERTIFICATE,CIRCUIT}.
 const REGISTRY_CERTIFICATE = 1n
 const REGISTRY_CIRCUIT = 2n
@@ -60,6 +56,7 @@ const VALIDITY_WINDOW = 86400n
 const WAIT = { timeout: 3600, interval: 1 } as const
 
 type Fixture = {
+  circuitVersion: string
   vkeyFields: string[]
   proof: string[]
   publicInputs: string[]
@@ -76,6 +73,9 @@ const FIXTURE: Fixture = JSON.parse(
     "utf8",
   ),
 )
+
+// The registry accepts the fixture's vk under the circuits release that made it
+const CIRCUIT_VERSION = Fr.fromHexString(circuitVersionToBytes32(FIXTURE.circuitVersion))
 
 const started = Date.now()
 const log = (msg: string) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`)
@@ -157,13 +157,11 @@ async function main() {
   )
   await timed("seed accepted vk", () =>
     registry.methods
-      .add_accepted_vk(CIRCUIT_MANIFEST_VERSION, Fr.fromHexString(FIXTURE.vkeyHashBB))
+      .add_accepted_vk(CIRCUIT_VERSION, Fr.fromHexString(FIXTURE.vkeyHashBB))
       .send({ from: admin, wait: WAIT }),
   )
   await timed("enable version", () =>
-    registry.methods
-      .set_version_status(CIRCUIT_MANIFEST_VERSION, true)
-      .send({ from: admin, wait: WAIT }),
+    registry.methods.set_version_status(CIRCUIT_VERSION, true).send({ from: admin, wait: WAIT }),
   )
 
   // ---- 3. Advance chain time past the DelayedPublicMutable delay ------------
@@ -172,7 +170,7 @@ async function main() {
   // absolutely: past the DPM delay (counted from the seeding just above) AND into the proof's
   // freshness window (zkpassport_aztec_verifier::verify::verify_zkpassport_proof requires
   //   current_date <= anchor_ts + 3600   AND   current_date + 604800 > anchor_ts,
-  // 604800s = 7 days = ServiceConfig.validity_period in AgeGate::claim).
+  // 604800s = 7 days, the validity period of AgeGate's ServiceConfig).
   const before = await l2Timestamp(node)
   const target = BigInt(FIXTURE.nowTimestamp) + DELAY + 120n
   const bump = target > before ? target - before : DELAY + 120n
@@ -184,7 +182,7 @@ async function main() {
   }
 
   const vkAccepted = await registry.methods
-    .is_vk_accepted(CIRCUIT_MANIFEST_VERSION, Fr.fromHexString(FIXTURE.vkeyHashBB))
+    .is_vk_accepted(CIRCUIT_VERSION, Fr.fromHexString(FIXTURE.vkeyHashBB))
     .simulate({ from: admin })
   const vkAcceptedResult = vkAccepted.result ?? vkAccepted
   log(`vk accepted after warp: ${JSON.stringify(vkAcceptedResult)}`)
@@ -197,9 +195,10 @@ async function main() {
     vk: FIXTURE.vkeyFields,
     proof: FIXTURE.proof,
     publicInputs: FIXTURE.publicInputs,
+    version: FIXTURE.circuitVersion,
   })
   log(
-    `capsule blob: ${blob.length} fields (vk ${VK_FIELDS} + proof ${PROOF_FIELDS} + pi ${FIXTURE.publicInputs.length})`,
+    `capsule blob: ${blob.length} fields (vk ${VK_FIELDS} + proof ${PROOF_FIELDS} + pi ${FIXTURE.publicInputs.length} + circuit version)`,
   )
 
   // The capsule is scoped to `user` — the sandbox account sending the transaction. The claim

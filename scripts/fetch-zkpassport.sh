@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fetch what the tests and the e2e need from zkpassport-packages, at the ref the contracts depend on:
-# the compiled ZKPassportRegistry artifact the tests deploy (zkpassport/target/) and the age proof
-# fixture the e2e proves with (zkpassport/fixtures/).
+# the compiled ZKPassportRegistry artifact the tests deploy (zkpassport/target/), the age proof
+# fixture the e2e proves with (zkpassport/fixtures/), and the ZKPassport npm packages the e2e
+# installs (zkpassport/npm/), which that ref may not have published yet.
 #
 # Usage: scripts/fetch-zkpassport.sh
 # Env: AZTEC, an Aztec toolchain version directory (default ~/.aztec/versions/<.aztecrc>)
@@ -35,4 +36,18 @@ fi
 mkdir -p "$root/zkpassport/target" "$root/zkpassport/fixtures"
 cp "$library/noir/target/zkpassport_registry_contract-ZKPassportRegistry.json" "$root/zkpassport/target/"
 cp "$library/test-harness/fixtures/outer_count_5_age.json" "$root/zkpassport/fixtures/"
-echo "zkpassport/ now holds the registry artifact and the age fixture from zkpassport-packages $ref"
+
+# Packed without a version in the file name, so the package-locks keep naming the same files. The
+# lockfiles also pin each package's hash, which holds until the ref changes as long as every
+# machine packs with the same bun: the one zkpassport-packages' CI builds with.
+bun() { npx --yes bun@1.3.8 "$@"; }
+(cd "$work/packages" && bun install --frozen-lockfile >/dev/null)
+rm -rf "$root/zkpassport/npm"
+mkdir -p "$root/zkpassport/npm" "$work/npm"
+for package in zkpassport-utils registry-sdk zkpassport-sdk aztec/ts; do
+  (cd "$work/packages/packages/$package" && bun run build >/dev/null && bun pm pack --quiet --destination "$work/npm" >/dev/null)
+done
+for name in utils registry sdk aztec; do
+  mv "$work/npm/zkpassport-$name-"*.tgz "$root/zkpassport/npm/zkpassport-$name.tgz"
+done
+echo "zkpassport/ now holds the registry artifact, the age fixture and the npm packages from zkpassport-packages $ref"

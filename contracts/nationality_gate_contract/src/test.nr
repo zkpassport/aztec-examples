@@ -12,17 +12,13 @@ use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
 use zkpassport::disclosed_data::{MRZ_DOC_TYPE_INDEX, TD3_NATIONALITY_INDEX};
 use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
-    AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
+    AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
 use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
 use zkpassport_aztec_verifier::constants::{DISCLOSE_CAPSULE_SLOT, PROOF_CAPSULE_SLOT};
 use zkpassport_registry_contract::local_network_registry::{
     deploy_local_network_registry, seed_local_network_registry,
 };
-
-// Must match NationalityGate's CIRCUIT_MANIFEST_VERSION (main.nr): packed("0.22.0").
-global CIRCUIT_MANIFEST_VERSION: Field =
-    0x0000001600000000000000000000000000000000000000000000000000000000;
 
 // Deploys the local network registry seeded with the age fixture's roots and vk, which the blobs
 // below keep, and NationalityGate.
@@ -35,7 +31,7 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
     );
     seed_local_network_registry(
         &mut env,
-        CIRCUIT_MANIFEST_VERSION,
+        AGE_FIXTURE_CIRCUIT_VERSION,
         AGE_FIXTURE_CERT_ROOT,
         AGE_FIXTURE_CIRCUIT_ROOT,
         AGE_FIXTURE_VK_HASH,
@@ -81,7 +77,7 @@ fn disclose_payload(mask: [bool; 90], bytes: [u8; 90]) -> [Field; 180] {
 // Swapping its age commitment for a disclose commitment gives a proof of {disclose, bind} with
 // the fixture's roots, date, vk and bound address. Its proof bytes no longer match its public
 // inputs, which these tests cannot notice: TXE does not run the recursion opcode.
-fn disclose_blob(mask: [bool; 90], bytes: [u8; 90]) -> [Field; 583] {
+fn disclose_blob(mask: [bool; 90], bytes: [u8; 90]) -> [Field; 585] {
     let mut blob = age_fixture_blob_for_txe();
     let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
     let mut swapped = 0;
@@ -101,7 +97,7 @@ unconstrained fn deliver_capsules(
     env: &mut TestEnvironment,
     gate: AztecAddress,
     sender: AztecAddress,
-    blob: [Field; 583],
+    blob: [Field; 585],
     payload: Option<[Field; 180]>,
 ) {
     env.utility_context_at(gate, |_| {
