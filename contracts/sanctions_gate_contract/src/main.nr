@@ -7,19 +7,13 @@ pub contract SanctionsGate {
         protocol::address::AztecAddress,
         state_vars::{Map, PublicMutable},
     };
-    use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof,
+        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof_for_user,
     };
 
-    // The domain this app's ZKPassport requests come from. The fixture proof was made for it.
-    global DOMAIN: Field = scope_hash("example.com");
-
-    // Circuit-manifest version this app accepts; the tests seed the registry with it.
-    // This is packed("0.22.0"), the circuits release the fixtures and the app prove with.
-    pub global CIRCUIT_MANIFEST_VERSION: Field =
-        0x0000001600000000000000000000000000000000000000000000000000000000;
+    // Proofs requested from example.com, the domain the fixture proof was made for
+    global SERVICE: ServiceConfig = ServiceConfig::new("example.com");
 
     #[storage]
     struct Storage<Context> {
@@ -35,20 +29,12 @@ pub contract SanctionsGate {
     /// date.
     #[external("private")]
     fn claim(user: AztecAddress) {
-        let config = ServiceConfig {
-            version: CIRCUIT_MANIFEST_VERSION,
-            domain: DOMAIN,
-            scope: 0,
-            unique_identifier_type: NULLIFIER_TYPE_NON_SALTED,
-            validity_period: 7 * 86400,
-            dev_mode: false,
-        };
-
-        let query = Query::new().sanctions().bind_user_address(user);
+        let query = Query::new().sanctions();
 
         // The capsules ride in the sender's PXE, so they are scoped to the sender, who may be a
         // relayer, not `user`.
-        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), config, query);
+        let verified =
+            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, SERVICE, query);
 
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
 
@@ -82,7 +68,7 @@ mod test {
     use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
     use zkpassport::fixtures::proof::{
         AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
-        AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
+        AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
     };
     use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
     use zkpassport_aztec_verifier::constants::{PROOF_CAPSULE_SLOT, SANCTIONS_CAPSULE_SLOT};
@@ -114,7 +100,7 @@ mod test {
         );
         seed_local_network_registry(
             &mut env,
-            SanctionsGate::CIRCUIT_MANIFEST_VERSION,
+            AGE_FIXTURE_CIRCUIT_VERSION,
             AGE_FIXTURE_CERT_ROOT,
             AGE_FIXTURE_CIRCUIT_ROOT,
             AGE_FIXTURE_VK_HASH,
@@ -141,7 +127,7 @@ mod test {
     // The age fixture is a real outer_count_5 proof with param commitments {age(18, 0), bind}.
     // Swapping its age commitment for a sanctions commitment gives a proof of {sanctions, bind}
     // with the fixture's roots, date, vk and bound address.
-    fn sanctions_blob(root: Field) -> [Field; 583] {
+    fn sanctions_blob(root: Field) -> [Field; 585] {
         let mut blob = age_fixture_blob_for_txe();
         let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
         for i in params_start..params_start + 2 {
