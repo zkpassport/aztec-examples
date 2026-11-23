@@ -37,9 +37,9 @@ mkdir -p "$root/zkpassport/target" "$root/zkpassport/fixtures"
 cp "$library/noir/target/zkpassport_registry_contract-ZKPassportRegistry.json" "$root/zkpassport/target/"
 cp "$library/test-harness/fixtures/outer_count_5_age.json" "$root/zkpassport/fixtures/"
 
-# Packed without a version in the file name, so the package-locks keep naming the same files. The
-# lockfiles also pin each package's hash, which holds until the ref changes as long as every
-# machine packs with the same bun: the one zkpassport-packages' CI builds with.
+# Packing turns their workspace dependencies into versions. Each package lands unpacked in
+# zkpassport/npm/<name>/, which package.json files depend on as a directory: unlike a tarball's, a
+# directory's contents aren't pinned by the package-locks, so they can change with the ref.
 bun() { npx --yes bun@1.3.8 "$@"; }
 (cd "$work/packages" && bun install --frozen-lockfile >/dev/null)
 rm -rf "$root/zkpassport/npm"
@@ -48,6 +48,7 @@ for package in zkpassport-utils registry-sdk zkpassport-sdk aztec/ts; do
   (cd "$work/packages/packages/$package" && bun run build >/dev/null && bun pm pack --quiet --destination "$work/npm" >/dev/null)
 done
 for name in utils registry sdk aztec; do
-  mv "$work/npm/zkpassport-$name-"*.tgz "$root/zkpassport/npm/zkpassport-$name.tgz"
+  mkdir "$root/zkpassport/npm/$name"
+  tar -xzf "$work/npm/zkpassport-$name-"*.tgz -C "$root/zkpassport/npm/$name" --strip-components 1
 done
 echo "zkpassport/ now holds the registry artifact, the age fixture and the npm packages from zkpassport-packages $ref"
