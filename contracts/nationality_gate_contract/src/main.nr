@@ -11,7 +11,7 @@ pub contract NationalityGate {
     };
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof,
+        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof_for_user,
     };
 
     // The nationality the badge is for, as the MRZ writes it
@@ -34,11 +34,12 @@ pub contract NationalityGate {
     /// nationality: passports and ID cards keep the nationality at different MRZ offsets.
     #[external("private")]
     fn claim(user: AztecAddress) {
-        let query = Query::new().disclose_nationality().bind_user_address(user);
+        let query = Query::new().disclose_nationality();
 
         // The capsules ride in the sender's PXE, so they are scoped to the sender, who may be a
         // relayer, not `user`.
-        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), SERVICE, query);
+        let verified =
+            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, SERVICE, query);
 
         assert(verified.nationality() == NATIONALITY.as_bytes(), "nationality not accepted");
 

@@ -11,7 +11,7 @@ pub contract AgeGate {
     };
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof,
+        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof_for_user,
     };
 
     global MIN_AGE: u8 = 18;
@@ -34,11 +34,12 @@ pub contract AgeGate {
     /// ZKPassport to bind that address when the proof was made).
     #[external("private")]
     fn claim(user: AztecAddress) {
-        let query = Query::new().age_min(MIN_AGE).bind_user_address(user);
+        let query = Query::new().age_min(MIN_AGE);
 
         // The capsule rides in the sender's PXE, so it is scoped to the sender — who may be a
         // relayer, not `user`.
-        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), SERVICE, query);
+        let verified =
+            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, SERVICE, query);
 
         // Make sure this can only be done once per passport
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
