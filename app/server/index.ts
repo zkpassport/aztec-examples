@@ -21,6 +21,7 @@ createServer(async (request, response) => {
       return send(response, 200, {
         gates: relayer.gateAddresses(),
         sourceChain: relayer.sourceChain,
+        network: relayer.network ?? null,
       })
     }
     if (request.method === "GET" && url.pathname === "/api/badge") {

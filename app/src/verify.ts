@@ -1,4 +1,4 @@
-import { NullifierType, type ProofResult, ZKPassport } from "@zkpassport/sdk"
+import { type AztecNetwork, NullifierType, type ProofResult, ZKPassport } from "@zkpassport/sdk"
 
 export type VerifyEvent =
   | { kind: "url"; url: string }
@@ -9,11 +9,13 @@ export type VerifyEvent =
   | { kind: "error"; message: string }
 
 /**
- * Ask the ZKPassport app for a proof that the user is 18 or older, bound to their Aztec address, in
- * the outer proof form an Aztec contract verifies. Dev mode also accepts mock passports.
+ * Ask the ZKPassport app for a proof that the user is 18 or older, bound to their Aztec address on
+ * `network`, in the outer proof form an Aztec contract verifies. Dev mode also accepts mock
+ * passports.
  */
 export async function requestAgeProof(
   address: string,
+  network: AztecNetwork,
   devMode: boolean,
   onEvent: (event: VerifyEvent) => void,
 ): Promise<void> {
@@ -30,6 +32,7 @@ export async function requestAgeProof(
   const { url, onRequestReceived, onGeneratingProof, onProofGenerated, onReject, onError } = query
     .gte("age", 18)
     .bind("user_address", address as `0x${string}`)
+    .bind("chain", network)
     .done()
 
   onRequestReceived(() => onEvent({ kind: "received" }))

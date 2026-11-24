@@ -1,3 +1,4 @@
+import type { AztecNetwork } from "@zkpassport/sdk"
 import QRCode from "qrcode"
 import { useCallback, useEffect, useState } from "react"
 import { demoAddress, isAztecAddress, loadAccount, saveAccount, shortAddress } from "./account"
@@ -19,6 +20,7 @@ export function App() {
   const [account, setAccount] = useState(loadAccount)
   const [mode, setMode] = useState<GateMode>("dev")
   const [sourceChain, setSourceChain] = useState<string | undefined>()
+  const [network, setNetwork] = useState<AztecNetwork | null>(null)
   const [badge, setBadge] = useState<boolean | undefined>()
   const [flow, setFlow] = useState<Flow>({ step: "idle" })
   const [order, setOrder] = useState<string | undefined>()
@@ -33,7 +35,10 @@ export function App() {
   useEffect(() => {
     fetch("/api/network")
       .then((response) => response.json())
-      .then((network: { sourceChain: string }) => setSourceChain(network.sourceChain))
+      .then((body: { sourceChain: string; network: AztecNetwork | null }) => {
+        setSourceChain(body.sourceChain)
+        setNetwork(body.network)
+      })
       .catch(() => setSourceChain(undefined))
   }, [])
 
@@ -43,9 +48,17 @@ export function App() {
 
   async function verify() {
     setFlow({ step: "idle" })
+    if (!network) {
+      setFlow({
+        step: "failed",
+        message:
+          "A ZKPassport proof can only be bound to Aztec mainnet or testnet, not this network.",
+      })
+      return
+    }
     // The proof must use the registries the network's ZKPassport registry mirrors; Sepolia's need
     // the SDK's dev mode. The gate decides whether mock passports are accepted.
-    await requestAgeProof(account, sourceChain === "ethereum_sepolia", async (event) => {
+    await requestAgeProof(account, network, sourceChain === "ethereum_sepolia", async (event) => {
       if (event.kind === "url") {
         setFlow({
           step: "scan",

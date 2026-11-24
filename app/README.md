@@ -6,15 +6,16 @@ that they are 18 or older. The proof is bound to the user's Aztec address and ve
 18 and nothing else.
 
 - `src/`: the page (Vite + React). It asks the ZKPassport app for an age proof in `compressed` mode,
-  bound to the user's Aztec address, against the registries the network's ZKPassport registry
-  mirrors (Sepolia's on the testnet and on a local network, which takes the SDK's dev mode), and
-  sends the proof to the relayer. The address is one the page made for this browser, or one the user
-  enters.
+  bound to the user's Aztec address and the relayer's network, against the registries the network's
+  ZKPassport registry mirrors (Sepolia's on the testnet and on a local network, which takes the
+  SDK's dev mode), and sends the proof to the relayer. The address is one the page made for this
+  browser, or one the user enters.
 - `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain: one that
   accepts only real passports, and one in dev mode that also accepts ZKPassport's mock passports. It
   then proves and sends each `claim(user)` with the user's proof, and reads badges. Fees go through
-  the testnet's sponsored fee contract. ZKPassport's registry artifact, its registration with the
-  relayer's wallet, the outer vk and the proof capsule come from
+  the testnet's sponsored fee contract. The proof's capsules come from the SDK's
+  `getAztecVerifierParameters`, delivered to the gate with `toAztecCapsules`. That, ZKPassport's
+  registry artifact and its registration with the relayer's wallet come from
   [`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec).
 
 ## Running it
@@ -22,6 +23,7 @@ that they are 18 or older. The proof is bound to the user's Aztec address and ve
 From the repo root, with the toolchain in `.aztecrc` active (see the root README):
 
 ```bash
+scripts/fetch-zkpassport.sh   # ZKPassport's npm packages, packed from the contracts' ref
 aztec compile
 cd app && npm ci
 npm run server   # the relayer, on port 3001
@@ -55,6 +57,10 @@ npm run dev
 
 On first start it deploys ZKPassport's registry where `verify_zkpassport_proof` looks for it on a
 local network, with the network's test accounts as admin and operator. It seeds it with Sepolia's
-latest certificate root, the circuit root of circuits 0.22.0 and their `outer_count_5` vk, and warps
+latest certificate root, the circuit root of circuits 0.23.0 and their `outer_count_5` vk, and warps
 the network's time past the registry's 24-hour delay. The relayer then sends from a test account,
 paying with its Fee Juice.
+
+A proof binds the network it is verified on, and a ZKPassport request can only name Aztec mainnet or
+testnet, so the ZKPassport app can't make a proof the gates on a local network accept. The page says
+so instead of requesting one.
