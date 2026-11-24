@@ -4,8 +4,10 @@ import { type GateMode, Relayer } from "./relayer"
 
 const PORT = Number(process.env.PORT ?? 3001)
 
+const NODE_URL = process.env.AZTEC_NODE_URL ?? "https://aztec-testnet.drpc.org"
+
 const relayer = await Relayer.start({
-  nodeUrl: process.env.AZTEC_NODE_URL ?? "https://aztec-testnet.drpc.org",
+  nodeUrl: NODE_URL,
   // ZKPassport's registry on the Aztec testnet
   registryAddress:
     process.env.REGISTRY_ADDRESS ??
@@ -18,18 +20,15 @@ createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", "http://localhost")
     if (request.method === "GET" && url.pathname === "/api/network") {
+      // The page's wallet reads its badge note itself: it needs the node, the gates and the
+      // relayer's account, which tags the notes it sends
       return send(response, 200, {
+        nodeUrl: NODE_URL,
         gates: relayer.gateAddresses(),
+        relayer: relayer.address(),
         sourceChain: relayer.sourceChain,
         network: relayer.network ?? null,
       })
-    }
-    if (request.method === "GET" && url.pathname === "/api/badge") {
-      const badge = await relayer.hasBadge(
-        gateMode(url.searchParams.get("mode")),
-        address(url.searchParams.get("user")),
-      )
-      return send(response, 200, { badge })
     }
     if (request.method === "POST" && url.pathname === "/api/claim") {
       const body = (await readJson(request)) as {

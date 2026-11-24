@@ -2,17 +2,22 @@
 
 An 18+ prediction market on the Aztec testnet. Trading unlocks once the user proves with ZKPassport
 that they are 18 or older. The proof is bound to the user's Aztec address and verified by an
-`AgeGate` contract, which grants that address a public badge. Fortuna learns that the user is over
-18 and nothing else.
+`AgeGate` contract, which mints that address a private badge note. Fortuna learns that the user is
+over 18 and nothing else, and nothing public names the user.
 
 - `src/`: the page (Vite + React). It asks the ZKPassport app for an age proof in `compressed` mode,
   bound to the user's Aztec address and the relayer's network, against the registries the network's
   ZKPassport registry mirrors (Sepolia's on the testnet and on a local network, which takes the
-  SDK's dev mode), and sends the proof to the relayer. The address is one the page made for this
-  browser, or one the user enters.
+  SDK's dev mode), and sends the proof to the relayer. The address is an Aztec account the page
+  makes in this browser, with an embedded wallet that keeps its secret key in `localStorage`. The
+  account is never deployed: it only receives the badge note. The wallet reads the badge with the
+  gate's `has_badge` utility function, looking for notes tagged from the relayer's account.
+  Clearing the browser's storage loses the account and its badge, and a passport claims once per
+  gate.
 - `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain: one that
   accepts only real passports, and one in dev mode that also accepts ZKPassport's mock passports. It
-  then proves and sends each `claim(user)` with the user's proof, and reads badges. Fees go through
+  then proves and sends each `claim(user)` with the user's proof. It can't read the badges, which
+  are private to their holders. Fees go through
   the testnet's sponsored fee contract. The proof's capsules come from the SDK's
   `getAztecVerifierParameters`, delivered to the gate with `toAztecCapsules`. That, ZKPassport's
   registry artifact and its registration with the relayer's wallet come from
@@ -27,8 +32,11 @@ scripts/fetch-zkpassport.sh   # the registry artifact and the age fixture, from 
 aztec compile
 cd app && npm ci
 npm run server   # the relayer, on port 3001
-npm run dev      # the page, on http://localhost:5173
+npm start        # builds the page and serves it on http://localhost:5173
 ```
+
+The page runs from a build because its Aztec wallet stores its data with a SQLite worker, which
+Vite's dev server can't serve.
 
 Scan the QR code with the ZKPassport app. The request travels through ZKPassport's bridge, so the
 phone does not need to reach this machine.
@@ -52,7 +60,7 @@ registries, which dev-mode requests use:
 ```bash
 aztec start --local-network   # in another shell
 AZTEC_NODE_URL=http://localhost:8080 npm run server
-npm run dev
+npm start
 ```
 
 On first start it deploys ZKPassport's registry where `verify_zkpassport_proof` looks for it on a
