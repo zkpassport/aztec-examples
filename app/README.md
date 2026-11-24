@@ -23,7 +23,7 @@ that they are 18 or older. The proof is bound to the user's Aztec address and ve
 From the repo root, with the toolchain in `.aztecrc` active (see the root README):
 
 ```bash
-scripts/fetch-zkpassport.sh   # ZKPassport's npm packages, packed from the contracts' ref
+scripts/fetch-zkpassport.sh   # the registry artifact and the age fixture, from the contracts' ref
 aztec compile
 cd app && npm ci
 npm run server   # the relayer, on port 3001

@@ -11,16 +11,13 @@
     "@aztec-labs/aztec.js": "6.0.0",
     "@aztec-labs/stdlib": "6.0.0",
     "@aztec-labs/wallets": "6.0.0",
-    "@zkpassport/aztec": "file:../zkpassport/npm/aztec",
-    "@zkpassport/utils": "file:../zkpassport/npm/utils"
+    "@zkpassport/aztec": "0.1.0-beta.2",
+    "@zkpassport/utils": "0.42.0-beta.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "prettier": "^3.6.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  },
-  "overrides": {
-    "@zkpassport/utils": "$@zkpassport/utils"
   }
 }
