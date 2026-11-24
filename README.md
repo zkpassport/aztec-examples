@@ -41,10 +41,9 @@ eval "$(aztec-up env)"
 
 The tests deploy the registry from `zkpassport/target/`, with
 `deploy_local_network_registry(&mut env, "zkpassport@zkpassport_registry_contract/ZKPassportRegistry")`.
-`scripts/fetch-zkpassport.sh` puts the registry artifact there, the age proof fixture the e2e uses
-in `zkpassport/fixtures/`, and ZKPassport's npm packages in `zkpassport/npm/`. It builds all of them
-from the zkpassport-packages ref the contracts depend on, the registry with the toolchain in
-`.aztecrc`.
+`scripts/fetch-zkpassport.sh` puts the registry artifact there and the age proof fixture the e2e
+uses in `zkpassport/fixtures/`. It takes both from the zkpassport-packages ref the contracts depend
+on, and compiles the registry with the toolchain in `.aztecrc`.
 
 ```bash
 scripts/fetch-zkpassport.sh
@@ -62,11 +61,11 @@ network, seeds the registry, makes a real `claim()` transaction with the age fix
 that a second claim with the same passport and a claim with a tampered proof both fail.
 
 Like an app, it takes the registry's artifact and the proof capsule from
-[`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec). It installs the package
-packed from the contracts' zkpassport-packages ref, which may not be published yet, so the package's
-registry is the same contract class as the one the contracts compile, and lands where
-`verify_zkpassport_proof` looks for it. Run `scripts/fetch-zkpassport.sh` before `npm ci`, and
-`npm install` after changing the ref, in case the packages' dependencies changed.
+[`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec), at the version published
+from the zkpassport-packages commit the contracts depend on. Its registry is then the contract class
+the contracts compile, and lands where `verify_zkpassport_proof` looks for it. When the contracts
+move to another zkpassport-packages ref, move the ZKPassport npm packages to the versions published
+from it.
 
 ```bash
 aztec start --local-network   # in another shell

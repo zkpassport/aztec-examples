@@ -15,10 +15,10 @@
     "@aztec-labs/noir-contracts.js": "6.0.0",
     "@aztec-labs/stdlib": "6.0.0",
     "@aztec-labs/wallets": "6.0.0",
-    "@zkpassport/aztec": "file:../zkpassport/npm/aztec",
-    "@zkpassport/registry": "file:../zkpassport/npm/registry",
-    "@zkpassport/sdk": "file:../zkpassport/npm/sdk",
-    "@zkpassport/utils": "file:../zkpassport/npm/utils",
+    "@zkpassport/aztec": "0.1.0-beta.2",
+    "@zkpassport/registry": "0.17.0-beta.0",
+    "@zkpassport/sdk": "0.23.0-beta.0",
+    "@zkpassport/utils": "0.42.0-beta.0",
     "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"
@@ -33,9 +33,5 @@
     "tsx": "^4.19.2",
     "typescript": "5.9.3",
     "vite": "7.3.8"
-  },
-  "overrides": {
-    "@zkpassport/registry": "$@zkpassport/registry",
-    "@zkpassport/utils": "$@zkpassport/utils"
   }
 }
