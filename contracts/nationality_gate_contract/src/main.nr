@@ -9,22 +9,16 @@ pub contract NationalityGate {
         protocol::address::AztecAddress,
         state_vars::{Map, PublicMutable},
     };
-    use zkpassport_aztec_verifier::constants::NULLIFIER_TYPE_NON_SALTED;
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, scope_hash, ServiceConfig, verify_zkpassport_proof,
+        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof_for_user,
     };
 
     // The nationality the badge is for, as the MRZ writes it
     global NATIONALITY: str<3> = "FRA";
 
-    // The domain this app's ZKPassport requests come from. The fixture proof was made for it.
-    global DOMAIN: Field = scope_hash("example.com");
-
-    // Circuit-manifest version this app accepts; must match the registry seeding (see test.nr).
-    // This is packed("0.22.0"), the circuits release the fixtures and the app prove with.
-    global CIRCUIT_MANIFEST_VERSION: Field =
-        0x0000001600000000000000000000000000000000000000000000000000000000;
+    // Proofs requested from example.com, the domain the fixture proof was made for
+    global SERVICE: ServiceConfig = ServiceConfig::new("example.com");
 
     #[storage]
     struct Storage<Context> {
@@ -40,20 +34,12 @@ pub contract NationalityGate {
     /// nationality: passports and ID cards keep the nationality at different MRZ offsets.
     #[external("private")]
     fn claim(user: AztecAddress) {
-        let config = ServiceConfig {
-            version: CIRCUIT_MANIFEST_VERSION,
-            domain: DOMAIN,
-            scope: 0,
-            unique_identifier_type: NULLIFIER_TYPE_NON_SALTED,
-            validity_period: 7 * 86400,
-            dev_mode: false,
-        };
-
-        let query = Query::new().disclose_nationality().bind_user_address(user);
+        let query = Query::new().disclose_nationality();
 
         // The capsules ride in the sender's PXE, so they are scoped to the sender, who may be a
         // relayer, not `user`.
-        let verified = verify_zkpassport_proof(self.context, self.msg_sender(), config, query);
+        let verified =
+            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, SERVICE, query);
 
         assert(verified.nationality() == NATIONALITY.as_bytes(), "nationality not accepted");
 

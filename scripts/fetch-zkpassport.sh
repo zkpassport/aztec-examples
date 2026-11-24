@@ -35,4 +35,5 @@ fi
 mkdir -p "$root/zkpassport/target" "$root/zkpassport/fixtures"
 cp "$library/noir/target/zkpassport_registry_contract-ZKPassportRegistry.json" "$root/zkpassport/target/"
 cp "$library/test-harness/fixtures/outer_count_5_age.json" "$root/zkpassport/fixtures/"
+
 echo "zkpassport/ now holds the registry artifact and the age fixture from zkpassport-packages $ref"

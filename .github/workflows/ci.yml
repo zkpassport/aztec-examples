@@ -51,6 +51,15 @@ jobs:
           echo "$HOME/.aztec/bin" >> "$GITHUB_PATH"
           echo "$HOME/.aztec/versions/$V/bin" >> "$GITHUB_PATH"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            scripts/package-lock.json
+            app/package-lock.json
+
       - name: Fetch the registry artifact and the age fixture
         run: scripts/fetch-zkpassport.sh
 
@@ -65,13 +74,6 @@ jobs:
 
       # The e2e needs a local Aztec network, so CI only typechecks it. Its age gate binding imports
       # the artifact compiled above, and the registry comes from @zkpassport/aztec.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: scripts/package-lock.json
-
       - name: Install e2e dependencies
         run: npm ci
         working-directory: scripts
@@ -79,3 +81,12 @@ jobs:
       - name: Typecheck the e2e
         run: npx tsc --noEmit -p .
         working-directory: scripts
+
+      # The Fortuna app imports the same compiled and fetched artifacts
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Typecheck and build the app
+        run: npm run build
+        working-directory: app
