@@ -3,9 +3,11 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract SanctionsGate {
     use aztec::{
-        macros::{functions::{external, only_self, view}, storage::storage},
-        protocol::address::AztecAddress,
-        state_vars::{Map, PublicMutable},
+        macros::{functions::external, notes::note, storage::storage},
+        messages::delivery::MessageDelivery,
+        note::{note_getter_options::NoteGetterOptions, note_viewer_options::NoteViewerOptions},
+        protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize}},
+        state_vars::{Owned, PrivateSet},
     };
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
@@ -15,14 +17,19 @@ pub contract SanctionsGate {
     // Proofs requested from example.com, the domain the fixture proof was made for
     global SERVICE: ServiceConfig = ServiceConfig::new("example.com");
 
+    /// The badge, a private note owned by the address the proof was bound to.
+    #[derive(Deserialize, Eq, Packable, Serialize)]
+    #[note]
+    pub struct BadgeNote {}
+
     #[storage]
     struct Storage<Context> {
-        badges: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
+        badges: Owned<PrivateSet<BadgeNote, Context>, Context>,
     }
 
     /// Claim the badge for `user`: verifies a ZKPassport proof (outer_count_5, param
     /// commitments = {sanctions, bind(user)}) that its holder is not on the sanctions lists,
-    /// burns the unique identifier (one claim per passport) and grants `user` the public badge.
+    /// burns the unique identifier (one claim per passport) and mints `user` a private badge note.
     ///
     /// The sanctions root the proof was screened against rides in its own capsule.
     /// verify_zkpassport_proof checks it against the proof, and in the registry at the proof's
@@ -38,19 +45,24 @@ pub contract SanctionsGate {
 
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);
 
-        self.enqueue_self._grant_badge(user);
+        // Constrained, so a relayer can't withhold the note from `user`
+        self.storage.badges.at(user).insert(BadgeNote {}).deliver(
+            MessageDelivery::onchain_constrained(),
+        );
     }
 
-    #[external("public")]
-    #[only_self]
-    fn _grant_badge(user: AztecAddress) {
-        self.storage.badges.at(user).write(true);
+    /// Fails unless `user` holds the badge. For other contracts' private functions, which pass
+    /// their own `msg_sender` as `user`. The PXE that runs the transaction needs `user`'s notes.
+    #[external("private")]
+    fn assert_has_badge(user: AztecAddress) {
+        let badges = self.storage.badges.at(user).get_notes(NoteGetterOptions::new().set_limit(1));
+        assert(badges.len() == 1, "no badge");
     }
 
-    #[external("public")]
-    #[view]
-    fn has_badge(user: AztecAddress) -> bool {
-        self.storage.badges.at(user).read()
+    /// Whether `user` holds the badge, as their own wallet sees it.
+    #[external("utility")]
+    unconstrained fn has_badge(user: AztecAddress) -> bool {
+        self.storage.badges.at(user).view_notes(NoteViewerOptions::new().set_limit(1)).len() == 1
     }
 }
 
@@ -61,16 +73,16 @@ mod test {
     use crate::SanctionsGate;
     use aztec::{
         oracle::capsules,
-        protocol::{address::AztecAddress, traits::FromField},
+        protocol::{address::AztecAddress, traits::{FromField, ToField}},
         test::helpers::test_environment::TestEnvironment,
     };
-    use zkpassport::commitments::{age_commitment, sanctions_commitment};
+    use zkpassport::commitments::{age_commitment, bind_commitment, sanctions_commitment};
     use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
     use zkpassport::fixtures::proof::{
         AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
         AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
     };
-    use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
+    use zkpassport::fixtures::txe::{age_fixture_blob_for_txe, TXE_CHAIN_ID};
     use zkpassport_aztec_verifier::constants::{PROOF_CAPSULE_SLOT, SANCTIONS_CAPSULE_SLOT};
     use zkpassport_registry_contract::{
         local_network_registry::{
@@ -126,13 +138,17 @@ mod test {
 
     // The age fixture is a real outer_count_5 proof with param commitments {age(18, 0), bind}.
     // Swapping its age commitment for a sanctions commitment gives a proof of {sanctions, bind}
-    // with the fixture's roots, date, vk and bound address.
-    fn sanctions_blob(root: Field) -> [Field; 585] {
+    // with the fixture's roots, date and vk. Its bind moves to `user` too: the fixture's own
+    // address has no keys in TXE, so nobody could read a badge minted to it.
+    fn sanctions_blob(root: Field, user: AztecAddress) -> [Field; 585] {
+        let fixture_bind = bind_commitment(AGE_FIXTURE_BIND_ADDRESS, TXE_CHAIN_ID);
         let mut blob = age_fixture_blob_for_txe();
         let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
         for i in params_start..params_start + 2 {
             if blob[i] == age_commitment(18, 0) {
                 blob[i] = sanctions_commitment(root, false);
+            } else if blob[i] == fixture_bind {
+                blob[i] = bind_commitment(user.to_field(), TXE_CHAIN_ID);
             }
         }
         blob
@@ -143,6 +159,7 @@ mod test {
         env: &mut TestEnvironment,
         gate: AztecAddress,
         sender: AztecAddress,
+        user: AztecAddress,
         proven_root: Field,
         sanctions_root: Option<Field>,
     ) {
@@ -150,7 +167,7 @@ mod test {
             capsules::store(
                 gate,
                 PROOF_CAPSULE_SLOT,
-                sanctions_blob(proven_root),
+                sanctions_blob(proven_root, user),
                 sender,
             );
             if sanctions_root.is_some() {
@@ -167,20 +184,21 @@ mod test {
     #[test]
     unconstrained fn claim_succeeds_with_the_latest_sanctions_root() {
         let (mut env, gate) = setup([(SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - DAY)]);
-        let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+        let user = env.create_light_account();
         let relayer = env.create_light_account();
 
         deliver_capsules(
             &mut env,
             gate,
             relayer,
+            user,
             SANCTIONS_ROOT,
             Option::some(SANCTIONS_ROOT),
         );
 
-        assert(!env.view_public(SanctionsGate::at(gate).has_badge(user)));
+        assert(!env.execute_utility(SanctionsGate::at(gate).has_badge(user)));
         let _ = env.call_private(relayer, SanctionsGate::at(gate).claim(user));
-        assert(env.view_public(SanctionsGate::at(gate).has_badge(user)));
+        assert(env.execute_utility(SanctionsGate::at(gate).has_badge(user)));
     }
 
     // The registry checks the root at the proof's date, so a list replaced after the proof was
@@ -191,31 +209,33 @@ mod test {
             (OLD_SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - 3 * DAY),
             (SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE),
         ]);
-        let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+        let user = env.create_light_account();
         let relayer = env.create_light_account();
 
         deliver_capsules(
             &mut env,
             gate,
             relayer,
+            user,
             OLD_SANCTIONS_ROOT,
             Option::some(OLD_SANCTIONS_ROOT),
         );
 
         let _ = env.call_private(relayer, SanctionsGate::at(gate).claim(user));
-        assert(env.view_public(SanctionsGate::at(gate).has_badge(user)));
+        assert(env.execute_utility(SanctionsGate::at(gate).has_badge(user)));
     }
 
     #[test(should_fail_with = "invalid sanctions registry root")]
     unconstrained fn claim_with_a_root_the_registry_does_not_have_fails() {
         let (mut env, gate) = setup([(SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - DAY)]);
-        let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+        let user = env.create_light_account();
         let relayer = env.create_light_account();
 
         deliver_capsules(
             &mut env,
             gate,
             relayer,
+            user,
             OLD_SANCTIONS_ROOT,
             Option::some(OLD_SANCTIONS_ROOT),
         );
@@ -230,13 +250,14 @@ mod test {
             (OLD_SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - 3 * DAY),
             (SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - 2 * DAY),
         ]);
-        let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+        let user = env.create_light_account();
         let relayer = env.create_light_account();
 
         deliver_capsules(
             &mut env,
             gate,
             relayer,
+            user,
             OLD_SANCTIONS_ROOT,
             Option::some(OLD_SANCTIONS_ROOT),
         );
@@ -247,10 +268,17 @@ mod test {
     #[test(should_fail_with = "missing sanctions capsule")]
     unconstrained fn claim_without_sanctions_capsule_fails() {
         let (mut env, gate) = setup([(SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - DAY)]);
-        let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+        let user = env.create_light_account();
         let relayer = env.create_light_account();
 
-        deliver_capsules(&mut env, gate, relayer, SANCTIONS_ROOT, Option::none());
+        deliver_capsules(
+            &mut env,
+            gate,
+            relayer,
+            user,
+            SANCTIONS_ROOT,
+            Option::none(),
+        );
 
         let _ = env.call_private(relayer, SanctionsGate::at(gate).claim(user));
     }
@@ -265,6 +293,7 @@ mod test {
             &mut env,
             gate,
             thief,
+            AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS),
             SANCTIONS_ROOT,
             Option::some(SANCTIONS_ROOT),
         );
@@ -277,13 +306,14 @@ mod test {
     #[test(should_fail)]
     unconstrained fn second_claim_same_passport_fails() {
         let (mut env, gate) = setup([(SANCTIONS_ROOT, AGE_FIXTURE_CURRENT_DATE - DAY)]);
-        let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+        let user = env.create_light_account();
         let relayer = env.create_light_account();
 
         deliver_capsules(
             &mut env,
             gate,
             relayer,
+            user,
             SANCTIONS_ROOT,
             Option::some(SANCTIONS_ROOT),
         );
@@ -293,6 +323,7 @@ mod test {
             &mut env,
             gate,
             relayer,
+            user,
             SANCTIONS_ROOT,
             Option::some(SANCTIONS_ROOT),
         );
