@@ -51,15 +51,16 @@ jobs:
           echo "$HOME/.aztec/bin" >> "$GITHUB_PATH"
           echo "$HOME/.aztec/versions/$V/bin" >> "$GITHUB_PATH"
 
-      # The fetch packs zkpassport-packages' npm packages with a bun it runs through npx
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: scripts/package-lock.json
+          cache-dependency-path: |
+            scripts/package-lock.json
+            app/package-lock.json
 
-      - name: Fetch the registry artifact, the age fixture and the npm packages
+      - name: Fetch the registry artifact and the age fixture
         run: scripts/fetch-zkpassport.sh
 
       - name: Check formatting
@@ -80,3 +81,12 @@ jobs:
       - name: Typecheck the e2e
         run: npx tsc --noEmit -p .
         working-directory: scripts
+
+      # The Fortuna app imports the same compiled and fetched artifacts
+      - name: Install app dependencies
+        run: npm ci
+        working-directory: app
+
+      - name: Typecheck and build the app
+        run: npm run build
+        working-directory: app
