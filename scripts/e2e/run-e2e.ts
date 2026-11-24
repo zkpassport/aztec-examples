@@ -263,13 +263,8 @@ async function main() {
     ageGate.methods.claim(boundUser).send({ from: user, capsules: [capsule(blob)], wait: WAIT }),
   )
   console.log(`CLAIM MINED: ${receipt.txHash.toString()}`)
-
-  // The public badge must land on the bound address, not on the submitting account.
-  const badgeBoundSim = await ageGate.methods.has_badge(boundUser).simulate({ from: user })
-  const badgeSenderSim = await ageGate.methods.has_badge(user).simulate({ from: user })
-  const badgeBound = badgeBoundSim.result ?? badgeBoundSim
-  const badgeSender = badgeSenderSim.result ?? badgeSenderSim
-  console.log(`BADGE GRANTED TO BOUND ADDRESS: ${badgeBound === true && badgeSender === false}`)
+  // The badge is a private note owned by the fixture's bound address, which has no keys in this
+  // wallet, so the e2e can't read it. The TXE tests check who holds it.
 
   // ---- 5. Double claim must collide on the uniqueness nullifier -------------
   let doubleFailed = false
@@ -303,10 +298,6 @@ async function main() {
     console.error(
       "FAILED: the double claim was not rejected — the uniqueness nullifier did not collide.",
     )
-    process.exit(1)
-  }
-  if (!(badgeBound === true && badgeSender === false)) {
-    console.error("FAILED: the badge did not land on the bound address (or leaked to the sender).")
     process.exit(1)
   }
   console.log("OK: all outcomes as expected.")

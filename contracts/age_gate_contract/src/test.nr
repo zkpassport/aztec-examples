@@ -3,14 +3,16 @@
 use crate::AgeGate;
 use aztec::{
     oracle::capsules,
-    protocol::{address::AztecAddress, traits::FromField},
+    protocol::{address::AztecAddress, traits::{FromField, ToField}},
     test::helpers::test_environment::TestEnvironment,
 };
+use zkpassport::commitments::bind_commitment;
+use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
 use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
     AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
-use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
+use zkpassport::fixtures::txe::{age_fixture_blob_for_txe, TXE_CHAIN_ID};
 use zkpassport_registry_contract::{
     local_network_registry::{
         deploy_local_network_registry, LOCAL_NETWORK_REGISTRY_ADDRESS, LOCAL_NETWORK_REGISTRY_ADMIN,
@@ -53,35 +55,88 @@ unconstrained fn deliver_capsule(
     age_gate: AztecAddress,
     sender: AztecAddress,
 ) {
+    deliver_blob(env, age_gate, sender, age_fixture_blob_for_txe());
+}
+
+unconstrained fn deliver_blob(
+    env: &mut TestEnvironment,
+    age_gate: AztecAddress,
+    sender: AztecAddress,
+    blob: [Field; 585],
+) {
     env.utility_context_at(age_gate, |_| {
         capsules::store(
             age_gate,
             zkpassport_aztec_verifier::constants::PROOF_CAPSULE_SLOT,
-            age_fixture_blob_for_txe(),
+            blob,
             sender,
         );
     });
 }
 
-// The fixture proof is bound to AGE_FIXTURE_BIND_ADDRESS (its bind subproof's user_address),
-// so `user` must be that address. The submitting account is deliberately a different one:
-// the bind commitment, not the transaction sender, is what authorizes the claim, so any
-// relayer may carry the transaction.
+// The fixture is bound to AGE_FIXTURE_BIND_ADDRESS, which has no keys in TXE, so nobody could
+// read a badge minted to it. Re-binding it to `user`, a TXE account, lets `user` see the note.
+// TXE doesn't verify the recursion, so only the bind commitment needs swapping.
+fn bound_to(user: AztecAddress, mut blob: [Field; 585]) -> [Field; 585] {
+    let fixture_bind = bind_commitment(AGE_FIXTURE_BIND_ADDRESS, TXE_CHAIN_ID);
+    let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
+    let mut swapped = 0;
+    for i in params_start..params_start + 2 {
+        if blob[i] == fixture_bind {
+            blob[i] = bind_commitment(user.to_field(), TXE_CHAIN_ID);
+            swapped += 1;
+        }
+    }
+    assert(swapped == 1, "age fixture has no bind commitment to swap");
+    blob
+}
+
+// The bind commitment, not the transaction sender, is what authorizes the claim, so the
+// submitting account is deliberately a different one: any relayer may carry the transaction.
 #[test]
 unconstrained fn claim_succeeds_with_fixture() {
     let (mut env, age_gate) = setup();
-    let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
-
+    let user = env.create_light_account();
     let relayer = env.create_light_account();
-    deliver_capsule(&mut env, age_gate, relayer);
+    deliver_blob(
+        &mut env,
+        age_gate,
+        relayer,
+        bound_to(user, age_fixture_blob_for_txe()),
+    );
 
-    assert(!env.view_public(AgeGate::at(age_gate).has_badge(user)));
+    assert(!env.execute_utility(AgeGate::at(age_gate).has_badge(user)));
 
     let _ = env.call_private(relayer, AgeGate::at(age_gate).claim(user));
 
     // The badge goes to the bound address, not to the account that submitted the claim.
-    assert(env.view_public(AgeGate::at(age_gate).has_badge(user)));
-    assert(!env.view_public(AgeGate::at(age_gate).has_badge(relayer)));
+    assert(env.execute_utility(AgeGate::at(age_gate).has_badge(user)));
+    assert(!env.execute_utility(AgeGate::at(age_gate).has_badge(relayer)));
+}
+
+// Another contract's private function can check the badge, with `user`'s notes
+#[test]
+unconstrained fn assert_has_badge_passes_for_holder() {
+    let (mut env, age_gate) = setup();
+    let user = env.create_light_account();
+    let relayer = env.create_light_account();
+    deliver_blob(
+        &mut env,
+        age_gate,
+        relayer,
+        bound_to(user, age_fixture_blob_for_txe()),
+    );
+    let _ = env.call_private(relayer, AgeGate::at(age_gate).claim(user));
+
+    let _ = env.call_private(user, AgeGate::at(age_gate).assert_has_badge(user));
+}
+
+#[test(should_fail_with = "no badge")]
+unconstrained fn assert_has_badge_fails_without_claim() {
+    let (mut env, age_gate) = setup();
+    let user = env.create_light_account();
+
+    let _ = env.call_private(user, AgeGate::at(age_gate).assert_has_badge(user));
 }
 
 // A proof bound to one address must not claim for another: same capsule blob, delivered for

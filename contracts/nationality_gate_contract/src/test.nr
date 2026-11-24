@@ -4,17 +4,17 @@
 use crate::NationalityGate;
 use aztec::{
     oracle::capsules,
-    protocol::{address::AztecAddress, traits::FromField},
+    protocol::{address::AztecAddress, traits::{FromField, ToField}},
     test::helpers::test_environment::TestEnvironment,
 };
-use zkpassport::commitments::{age_commitment, disclose_commitment};
+use zkpassport::commitments::{age_commitment, bind_commitment, disclose_commitment};
 use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
 use zkpassport::disclosed_data::{MRZ_DOC_TYPE_INDEX, TD3_NATIONALITY_INDEX};
 use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
     AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
 };
-use zkpassport::fixtures::txe::age_fixture_blob_for_txe;
+use zkpassport::fixtures::txe::{age_fixture_blob_for_txe, TXE_CHAIN_ID};
 use zkpassport_aztec_verifier::constants::{DISCLOSE_CAPSULE_SLOT, PROOF_CAPSULE_SLOT};
 use zkpassport_registry_contract::local_network_registry::{
     deploy_local_network_registry, seed_local_network_registry,
@@ -91,6 +91,22 @@ fn disclose_blob(mask: [bool; 90], bytes: [u8; 90]) -> [Field; 585] {
     blob
 }
 
+// The fixture is bound to AGE_FIXTURE_BIND_ADDRESS, which has no keys in TXE, so nobody could
+// read a badge minted to it. Re-binding it to `user`, a TXE account, lets `user` see the note.
+fn bound_to(user: AztecAddress, mut blob: [Field; 585]) -> [Field; 585] {
+    let fixture_bind = bind_commitment(AGE_FIXTURE_BIND_ADDRESS, TXE_CHAIN_ID);
+    let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
+    let mut swapped = 0;
+    for i in params_start..params_start + 2 {
+        if blob[i] == fixture_bind {
+            blob[i] = bind_commitment(user.to_field(), TXE_CHAIN_ID);
+            swapped += 1;
+        }
+    }
+    assert(swapped == 1, "age fixture has no bind commitment to swap");
+    blob
+}
+
 // The capsules are scoped to the account that will send the claim transaction, not to the
 // address the proof is bound to.
 unconstrained fn deliver_capsules(
@@ -111,7 +127,7 @@ unconstrained fn deliver_capsules(
 #[test]
 unconstrained fn claim_succeeds_with_accepted_nationality() {
     let (mut env, gate) = setup();
-    let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
+    let user = env.create_light_account();
     let relayer = env.create_light_account();
 
     let (mask, bytes) = passport_disclosure("FRA");
@@ -119,13 +135,14 @@ unconstrained fn claim_succeeds_with_accepted_nationality() {
         &mut env,
         gate,
         relayer,
-        disclose_blob(mask, bytes),
+        bound_to(user, disclose_blob(mask, bytes)),
         Option::some(disclose_payload(mask, bytes)),
     );
 
-    assert(!env.view_public(NationalityGate::at(gate).has_badge(user)));
+    assert(!env.execute_utility(NationalityGate::at(gate).has_badge(user)));
     let _ = env.call_private(relayer, NationalityGate::at(gate).claim(user));
-    assert(env.view_public(NationalityGate::at(gate).has_badge(user)));
+    assert(env.execute_utility(NationalityGate::at(gate).has_badge(user)));
+    assert(!env.execute_utility(NationalityGate::at(gate).has_badge(relayer)));
 }
 
 #[test(should_fail_with = "nationality not accepted")]

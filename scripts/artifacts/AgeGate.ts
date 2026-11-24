@@ -107,6 +107,9 @@ export class AgeGateContract extends ContractBase {
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
+    /** assert_has_badge(user: struct) */
+    assert_has_badge: ((user: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** claim(user: struct) */
     claim: ((user: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
