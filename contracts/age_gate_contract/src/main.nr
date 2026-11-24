@@ -5,9 +5,9 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract AgeGate {
     use aztec::{
-        macros::{functions::{external, only_self, view}, storage::storage},
-        protocol::address::AztecAddress,
-        state_vars::{Map, PublicMutable},
+        macros::{functions::{external, initializer, only_self, view}, storage::storage},
+        protocol::{address::AztecAddress, traits::Packable},
+        state_vars::{Map, PublicImmutable, PublicMutable},
     };
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
@@ -16,14 +16,28 @@ pub contract AgeGate {
 
     global MIN_AGE: u8 = 18;
 
-    // Proofs requested from example.com, the domain the fixture proof was made for
-    global SERVICE: ServiceConfig = ServiceConfig::new("example.com");
+    // The service this gate accepts proofs for, set when it is deployed.
+    #[derive(Eq, Packable)]
+    pub struct GateConfig {
+        // scope_hash of the domain the app's ZKPassport requests come from
+        domain: Field,
+        // Also accepts proofs from ZKPassport's mock passports
+        dev_mode: bool,
+    }
 
     #[storage]
     struct Storage<Context> {
+        config: PublicImmutable<GateConfig, Context>,
         // The 18+ badge: a public, soulbound flag per address. The passport proof that earns
         // it stays private; what becomes public is only that `user` holds the badge.
         badges: Map<AztecAddress, PublicMutable<bool, Context>, Context>,
+    }
+
+    /// `domain` is the `scope_hash` of the domain the app's ZKPassport requests come from.
+    #[external("public")]
+    #[initializer]
+    fn constructor(domain: Field, dev_mode: bool) {
+        self.storage.config.initialize(GateConfig { domain, dev_mode });
     }
 
     /// Claim the 18+ badge for `user`: verifies a ZKPassport proof (outer_count_5, param
@@ -34,12 +48,16 @@ pub contract AgeGate {
     /// ZKPassport to bind that address when the proof was made).
     #[external("private")]
     fn claim(user: AztecAddress) {
+        let gate = self.storage.config.read();
+        let mut config = ServiceConfig::from_domain_hash(gate.domain);
+        config.dev_mode = gate.dev_mode;
+
         let query = Query::new().age_min(MIN_AGE);
 
         // The capsule rides in the sender's PXE, so it is scoped to the sender — who may be a
         // relayer, not `user`.
         let verified =
-            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, SERVICE, query);
+            verify_zkpassport_proof_for_user(self.context, self.msg_sender(), user, config, query);
 
         // Make sure this can only be done once per passport
         emit_uniqueness_nullifier(self.context, verified.unique_identifier);

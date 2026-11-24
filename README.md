@@ -3,16 +3,19 @@
 Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec library in
 [zkpassport-packages](https://github.com/zkpassport/zkpassport-packages/tree/main/packages/aztec).
 
-| Contract                              | What it shows                                                                                                                                                                                                                                                         |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user` on the gate's network, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. |
-| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                                            |
-| `contracts/sanctions_gate_contract`   | A sanctions-screened gate. `claim(user)` verifies a proof, bound to `user` on the gate's network, that its holder is not on the sanctions lists, and grants the badge once per passport.                                                                              |
+| Contract                              | What it shows                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user` on the gate's network, emits a uniqueness nullifier so each passport claims once, and grants `user` a public badge. Since the proof is bound to `user`, anyone may submit the transaction. A deployment sets the domain its requests come from, and whether it also accepts ZKPassport's mock passports. |
+| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals.                                                                                                                                                                                                          |
+| `contracts/sanctions_gate_contract`   | A sanctions-screened gate. `claim(user)` verifies a proof, bound to `user` on the gate's network, that its holder is not on the sanctions lists, and grants the badge once per passport.                                                                                                                                                                                            |
 
 The sanctions gate's client asks the ZKPassport SDK for `.sanctions()` and the bind, and stashes the
 sanctions root the proof was screened against, the proof result's
 `committedInputs.exclusion_check_sanctions.rootHash`, in the gate's sanctions capsule
 (`SANCTIONS_CAPSULE_SLOT`, 3) next to the proof capsule.
+
+[`app/`](app/README.md) is Fortuna, an 18+ prediction market on the Aztec testnet that uses the age
+gate with proofs from the ZKPassport app.
 
 ## Depending on the library
 
@@ -44,10 +47,9 @@ eval "$(aztec-up env)"
 
 The tests deploy the registry from `zkpassport/target/`, with
 `deploy_local_network_registry(&mut env, "zkpassport@zkpassport_registry_contract/ZKPassportRegistry")`.
-`scripts/fetch-zkpassport.sh` puts the registry artifact there, the age proof fixture the e2e uses
-in `zkpassport/fixtures/`, and ZKPassport's npm packages in `zkpassport/npm/`. It builds all of them
-from the zkpassport-packages ref the contracts depend on, the registry with the toolchain in
-`.aztecrc`.
+`scripts/fetch-zkpassport.sh` puts the registry artifact there and the age proof fixture the e2e
+uses in `zkpassport/fixtures/`. It takes both from the zkpassport-packages ref the contracts depend
+on, and compiles the registry with the toolchain in `.aztecrc`.
 
 ```bash
 scripts/fetch-zkpassport.sh
@@ -65,11 +67,11 @@ network, seeds the registry, makes a real `claim()` transaction with the age fix
 that a second claim with the same passport and a claim with a tampered proof both fail.
 
 Like an app, it takes the registry's artifact and the proof capsule from
-[`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec). It installs the package
-packed from the contracts' zkpassport-packages ref, which may not be published yet, so the package's
-registry is the same contract class as the one the contracts compile, and lands where
-`verify_zkpassport_proof` looks for it. Run `scripts/fetch-zkpassport.sh` before `npm ci`, and
-`npm install` after changing the ref, in case the packages' dependencies changed.
+[`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec), at the version published
+from the zkpassport-packages commit the contracts depend on. Its registry is then the contract class
+the contracts compile, and lands where `verify_zkpassport_proof` looks for it. When the contracts
+move to another zkpassport-packages ref, move the ZKPassport npm packages to the versions published
+from it.
 
 ```bash
 aztec start --local-network   # in another shell
