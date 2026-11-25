@@ -17,12 +17,20 @@ import { deriveMasterMessageSigningSecretKey } from "@aztec-labs/stdlib/keys"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
 import { registerZKPassportRegistry, toAztecCapsules } from "@zkpassport/aztec"
-import { type AztecNetwork, type ProofResult, ZKPassport } from "@zkpassport/sdk"
+import type { AztecNetwork, ProofResult } from "@zkpassport/sdk"
 import { getIdFromChain } from "@zkpassport/utils"
 import { getScopeHash } from "@zkpassport/utils/circuit-matcher"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import AgeGateJson from "../../target/age_gate_contract-AgeGate.json" with { type: "json" }
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
+
+// The SDK's ESM build doesn't load in Node: it imports `buffer/` and named exports of a CommonJS
+// package. Its CommonJS build does.
+const { ZKPassport } = createRequire(import.meta.url)(
+  "@zkpassport/sdk",
+) as typeof import("@zkpassport/sdk")
+type ZKPassport = InstanceType<typeof ZKPassport>
 
 export type GateMode = "live" | "dev"
 
