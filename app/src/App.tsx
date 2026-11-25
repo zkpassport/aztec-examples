@@ -23,9 +23,31 @@ export function App() {
   const [network, setNetwork] = useState<AztecNetwork | null>(null)
   const [badge, setBadge] = useState<boolean | undefined>()
   const [flow, setFlow] = useState<Flow>({ step: "idle" })
-  const [order, setOrder] = useState<string | undefined>()
+  const [order, setOrder] = useState<Order | undefined>()
 
   const account = wallet?.address.toString()
+
+  async function trade(marketIndex: number, side: "YES" | "NO") {
+    if (!wallet) {
+      return
+    }
+    const what = `${side} on “${MARKETS[marketIndex].question}”`
+    setOrder({ status: "placing", what })
+    try {
+      // Market ids on chain start at 1
+      const txHash = await wallet.placeOrder(mode, marketIndex + 1, side === "YES")
+      setOrder({ status: "placed", what, txHash })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOrder({
+        status: "refused",
+        what,
+        message: message.includes("no badge")
+          ? "Fortuna's market contract refused it: this account doesn't hold the 18+ badge. Verify your age to trade."
+          : message,
+      })
+    }
+  }
 
   const refreshBadge = useCallback(async () => {
     if (!wallet) {
@@ -42,13 +64,14 @@ export function App() {
         async (body: {
           nodeUrl: string
           gates: Record<GateMode, string>
+          markets: Record<GateMode, string>
           relayer: string
           sourceChain: string
           network: AztecNetwork | null
         }) => {
           setSourceChain(body.sourceChain)
           setNetwork(body.network)
-          setWallet(await FortunaWallet.connect(body.nodeUrl, body.gates, body.relayer))
+          setWallet(await FortunaWallet.connect(body))
         },
       )
       .catch((error: unknown) =>
@@ -126,23 +149,22 @@ export function App() {
         <section className="markets">
           <h1>Markets</h1>
           {badge === false && (
-            <p className="locked-hint">Verify that you're 18 or older to trade.</p>
+            <p className="locked-hint">
+              Orders need Fortuna's 18+ badge, which the market contract checks. Verify that you're
+              18 or older to trade.
+            </p>
           )}
           <div className="market-list">
-            {MARKETS.map((market) => (
+            {MARKETS.map((market, index) => (
               <MarketCard
                 key={market.id}
                 market={market}
-                unlocked={badge === true}
-                onTrade={(side) => setOrder(`${side} on “${market.question}”`)}
+                disabled={!wallet || order?.status === "placing"}
+                onTrade={(side) => trade(index, side)}
               />
             ))}
           </div>
-          {order && (
-            <div className="toast" role="status" onClick={() => setOrder(undefined)}>
-              Order placed: {order}. This is a demo; no funds move.
-            </div>
-          )}
+          {order && <OrderStatus order={order} onDismiss={() => setOrder(undefined)} />}
         </section>
 
         <aside className="gate">
@@ -211,9 +233,40 @@ function AccountBox(props: {
   )
 }
 
+type Order =
+  | { status: "placing"; what: string }
+  | { status: "placed"; what: string; txHash: string }
+  | { status: "refused"; what: string; message: string }
+
+function OrderStatus(props: { order: Order; onDismiss: () => void }) {
+  const { order } = props
+  switch (order.status) {
+    case "placing":
+      return (
+        <div className="toast" role="status">
+          <span className="spinner" aria-hidden="true" />
+          Proving your order in this browser: {order.what}…
+        </div>
+      )
+    case "placed":
+      return (
+        <div className="toast" role="status" onClick={props.onDismiss}>
+          Order placed: {order.what}, in transaction {order.txHash.slice(0, 10)}…. This is a demo;
+          no funds move.
+        </div>
+      )
+    case "refused":
+      return (
+        <div className="toast refused" role="alert" onClick={props.onDismiss}>
+          Order refused: {order.what}. {order.message}
+        </div>
+      )
+  }
+}
+
 function MarketCard(props: {
   market: Market
-  unlocked: boolean
+  disabled: boolean
   onTrade: (side: "YES" | "NO") => void
 }) {
   const { market } = props
@@ -228,7 +281,7 @@ function MarketCard(props: {
         <button
           type="button"
           className="yes"
-          disabled={!props.unlocked}
+          disabled={props.disabled}
           onClick={() => props.onTrade("YES")}
         >
           Yes {market.yes}¢
@@ -236,7 +289,7 @@ function MarketCard(props: {
         <button
           type="button"
           className="no"
-          disabled={!props.unlocked}
+          disabled={props.disabled}
           onClick={() => props.onTrade("NO")}
         >
           No {100 - market.yes}¢

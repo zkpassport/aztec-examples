@@ -13,6 +13,7 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { SPONSORED_FPC_SALT } from "@aztec-labs/constants"
 import { SponsoredFPCContractArtifact } from "@aztec-labs/noir-contracts.js/SponsoredFPC"
+import { getContractClassFromArtifact } from "@aztec-labs/stdlib/contract"
 import { deriveMasterMessageSigningSecretKey } from "@aztec-labs/stdlib/keys"
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec-labs/wallets/testing"
@@ -23,6 +24,7 @@ import { getScopeHash } from "@zkpassport/utils/circuit-matcher"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import AgeGateJson from "../../target/age_gate_contract-AgeGate.json" with { type: "json" }
+import FortunaMarketJson from "../../target/fortuna_market_contract-FortunaMarket.json" with { type: "json" }
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
 // The SDK's ESM build doesn't load in Node: it imports `buffer/` and named exports of a CommonJS
@@ -59,6 +61,8 @@ export class Relayer {
 
   private constructor(
     private readonly gates: Record<GateMode, Contract>,
+    /** The market each gate's badge opens */
+    private readonly markets: Record<GateMode, Contract>,
     private readonly account: AztecAddress,
     private readonly fee: Fee,
     private readonly zkpassport: ZKPassport,
@@ -103,34 +107,48 @@ export class Relayer {
       await registerZKPassportRegistry(wallet, node, config.registryAddress)
     }
 
-    const ageGate = artifact(AgeGateJson)
     const deployments = readDeployments(config.deploymentsPath)
     const key = `${config.nodeUrl}|${config.domain}`
-    const gates = {} as Record<GateMode, Contract>
-    for (const mode of ["live", "dev"] as const) {
-      const recorded = deployments[key]?.[mode]
+
+    // Reuses the contract recorded under `name` while the node has it with this artifact's code,
+    // and deploys it otherwise
+    async function deployed(
+      name: string,
+      contractArtifact: ContractArtifact,
+      args: unknown[],
+    ): Promise<Contract> {
+      const recorded = deployments[key]?.[name]
       const instance = recorded
         ? await node.getContract(AztecAddress.fromStringUnsafe(recorded))
         : undefined
-      if (instance) {
-        await wallet.registerContract(instance, ageGate)
-        gates[mode] = await Contract.at(instance.address, ageGate, wallet)
-      } else {
-        console.log(`Deploying the ${mode} AgeGate for ${config.domain}...`)
-        const domainHash = new Fr(getScopeHash(config.domain))
-        const { contract } = await Contract.deploy(wallet, ageGate, [
-          domainHash,
-          mode === "dev",
-        ]).send({
-          from: account,
-          ...(fee ? { fee } : {}),
-          wait: WAIT,
-        })
-        gates[mode] = contract
-        deployments[key] = { ...deployments[key], [mode]: contract.address.toString() }
-        writeFileSync(config.deploymentsPath, JSON.stringify(deployments, null, 2) + "\n")
+      const { id: classId } = await getContractClassFromArtifact(contractArtifact)
+      if (instance?.currentContractClassId.equals(classId)) {
+        await wallet.registerContract(instance, contractArtifact)
+        return Contract.at(instance.address, contractArtifact, wallet)
       }
-      console.log(`${mode} AgeGate: ${gates[mode].address}`)
+
+      console.log(`Deploying ${contractArtifact.name} (${name}) for ${config.domain}...`)
+      const { contract } = await Contract.deploy(wallet, contractArtifact, args).send({
+        from: account,
+        ...(fee ? { fee } : {}),
+        wait: WAIT,
+      })
+      deployments[key] = { ...deployments[key], [name]: contract.address.toString() }
+      writeFileSync(config.deploymentsPath, JSON.stringify(deployments, null, 2) + "\n")
+      return contract
+    }
+
+    const ageGate = artifact(AgeGateJson)
+    const fortunaMarket = artifact(FortunaMarketJson)
+    const domainHash = new Fr(getScopeHash(config.domain))
+    const gates = {} as Record<GateMode, Contract>
+    const markets = {} as Record<GateMode, Contract>
+    for (const mode of ["live", "dev"] as const) {
+      gates[mode] = await deployed(mode, ageGate, [domainHash, mode === "dev"])
+      markets[mode] = await deployed(`${mode}Market`, fortunaMarket, [gates[mode].address])
+      console.log(
+        `${mode} AgeGate: ${gates[mode].address}, FortunaMarket: ${markets[mode].address}`,
+      )
     }
 
     // A local network's registry is seeded from Sepolia
@@ -141,11 +159,15 @@ export class Relayer {
       (name) => getIdFromChain(name) === rollupVersion,
     )
     const zkpassport = new ZKPassport(config.domain)
-    return new Relayer(gates, account, fee, zkpassport, sourceChain, network)
+    return new Relayer(gates, markets, account, fee, zkpassport, sourceChain, network)
   }
 
   gateAddresses(): Record<GateMode, string> {
     return { live: this.gates.live.address.toString(), dev: this.gates.dev.address.toString() }
+  }
+
+  marketAddresses(): Record<GateMode, string> {
+    return { live: this.markets.live.address.toString(), dev: this.markets.dev.address.toString() }
   }
 
   /** The account that sends the claims, which the badge notes are tagged from */
@@ -178,6 +200,6 @@ function artifact(json: unknown): ContractArtifact {
   return loadContractArtifact(json as NoirCompiledContract)
 }
 
-function readDeployments(path: string): Record<string, Partial<Record<GateMode, string>>> {
+function readDeployments(path: string): Record<string, Record<string, string>> {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf-8")) : {}
 }
