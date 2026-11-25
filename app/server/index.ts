@@ -25,6 +25,7 @@ createServer(async (request, response) => {
       return send(response, 200, {
         nodeUrl: NODE_URL,
         gates: relayer.gateAddresses(),
+        markets: relayer.marketAddresses(),
         relayer: relayer.address(),
         sourceChain: relayer.sourceChain,
         network: relayer.network ?? null,

@@ -1,24 +1,27 @@
 # Fortuna
 
-An 18+ prediction market on the Aztec testnet. Trading unlocks once the user proves with ZKPassport
-that they are 18 or older. The proof is bound to the user's Aztec address and verified by an
-`AgeGate` contract, which mints that address a private badge note. Fortuna learns that the user is
-over 18 and nothing else, and nothing public names the user.
+An 18+ prediction market on the Aztec testnet. Orders go to a `FortunaMarket` contract, which
+refuses them unless the trader holds Fortuna's 18+ badge. The user gets the badge by proving with
+ZKPassport that they are 18 or older: the proof is bound to the user's Aztec address and verified by
+an `AgeGate` contract, which mints that address a private badge note. Fortuna learns that the user
+is over 18 and nothing else, and nothing public names the user.
 
 - `src/`: the page (Vite + React). It asks the ZKPassport app for an age proof in `compressed` mode,
   bound to the user's Aztec address and the relayer's network, against the registries the network's
   ZKPassport registry mirrors (Sepolia's on the testnet and on a local network, which takes the
   SDK's dev mode), and sends the proof to the relayer. The address is an Aztec account the page
   makes in this browser, with an embedded wallet that keeps its secret key in `localStorage`. The
-  account is never deployed: it only receives the badge note. The wallet reads the badge with the
-  gate's `has_badge` utility function, looking for notes tagged from the relayer's account.
-  Clearing the browser's storage loses the account and its badge, and a passport claims once per
-  gate.
-- `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain: one that
-  accepts only real passports, and one in dev mode that also accepts ZKPassport's mock passports. It
-  then proves and sends each `claim(user)` with the user's proof. It can't read the badges, which
-  are private to their holders. Fees go through
-  the testnet's sponsored fee contract. The proof's capsules come from the SDK's
+  account is never deployed: it receives the badge note and sends its own orders. The wallet reads
+  the badge with the gate's `has_badge` utility function, looking for notes tagged from the
+  relayer's account. An order is a `place_order` transaction the wallet proves in the browser; the
+  market calls the gate's `assert_has_badge` for the sender, which only the holder's wallet can
+  satisfy, from its own notes. Fees go through the network's sponsored fee contract. Clearing the
+  browser's storage loses the account and its badge, and a passport claims once per gate.
+- `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain, one that
+  accepts only real passports and one in dev mode that also accepts ZKPassport's mock passports,
+  and a `FortunaMarket` for each. It then proves and sends each `claim(user)` with the user's
+  proof. It can't read the badges, which are private to their holders. Fees go through the
+  testnet's sponsored fee contract. The proof's capsules come from the SDK's
   `getAztecVerifierParameters`, delivered to the gate with `toAztecCapsules`. That, ZKPassport's
   registry artifact and its registration with the relayer's wallet come from
   [`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec).
@@ -49,8 +52,8 @@ The relayer reads:
   the gates only accept proofs requested from that host;
 - `PORT`: 3001 by default.
 
-`server/deployments.json` records the gates it deployed, by node and domain. A recorded gate the
-node no longer has is deployed again.
+`server/deployments.json` records the gates and markets it deployed, by node and domain. A recorded
+contract the node no longer has, or has with older code, is deployed again.
 
 ## Local network
 
