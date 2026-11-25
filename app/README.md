@@ -6,17 +6,20 @@ ZKPassport that they are 18 or older: the proof is bound to the user's Aztec add
 an `AgeGate` contract, which mints that address a private badge note. Fortuna learns that the user
 is over 18 and nothing else, and nothing public names the user.
 
-- `src/`: the page (Vite + React). It asks the ZKPassport app for an age proof in `compressed` mode,
-  bound to the user's Aztec address and the relayer's network, against the registries the network's
+- `src/`: the page (Vite + React). Its "Verify my age" button is ZKPassport's hosted flow
+  (`VerifyWithZKPassport` from [`@zkpassport/ui`](https://www.npmjs.com/package/@zkpassport/ui)),
+  which opens ZKPassport's verification window. It asks for an age proof in `compressed` mode, bound
+  to the user's Aztec address and the relayer's network, against the registries the network's
   ZKPassport registry mirrors (Sepolia's on the testnet and on a local network, which takes the
-  SDK's dev mode), and sends the proof to the relayer. The address is an Aztec account the page
-  makes in this browser, with an embedded wallet that keeps its secret key in `localStorage`. The
-  account is never deployed: it receives the badge note and sends its own orders. The wallet reads
-  the badge with the gate's `has_badge` utility function, looking for notes tagged from the
-  relayer's account. An order is a `place_order` transaction the wallet proves in the browser; the
-  market calls the gate's `assert_has_badge` for the sender, which only the holder's wallet can
-  satisfy, from its own notes. Fees go through the network's sponsored fee contract. Clearing the
-  browser's storage loses the account and its badge.
+  SDK's dev mode), and the page sends the proof to the relayer. Each market card shows the orders
+  the market contract has counted, and the result of your own order. The address is an Aztec account
+  the page makes in this browser, with an embedded wallet that keeps its secret key in
+  `localStorage`. The account is never deployed: it receives the badge note and sends its own
+  orders. The wallet reads the badge with the gate's `has_badge` utility function, looking for notes
+  tagged from the relayer's account. An order is a `place_order` transaction the wallet proves in
+  the browser; the market calls the gate's `assert_has_badge` for the sender, which only the
+  holder's wallet can satisfy, from its own notes. Fees go through the network's sponsored fee
+  contract. Clearing the browser's storage loses the account and its badge.
 - `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain, one that
   accepts only real passports and one in dev mode that also accepts ZKPassport's mock passports,
   and a `FortunaMarket` for each. It then proves and sends each `claim(user)` with the user's
@@ -41,8 +44,8 @@ npm start        # builds the page and serves it on http://localhost:5173
 The page runs from a build because its Aztec wallet stores its data with a SQLite worker, which
 Vite's dev server can't serve.
 
-Scan the QR code with the ZKPassport app. The request travels through ZKPassport's bridge, so the
-phone does not need to reach this machine.
+Click **Verify my age** and scan the code in ZKPassport's window with the ZKPassport app. The
+request travels through ZKPassport's bridge, so the phone does not need to reach this machine.
 
 The relayer reads:
 

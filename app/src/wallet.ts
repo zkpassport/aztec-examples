@@ -99,6 +99,18 @@ export class FortunaWallet {
     return Boolean(result)
   }
 
+  /** The orders placed on `market` of the `mode` gate's market, as the contract counts them */
+  async orderCounts(mode: GateMode, market: number): Promise<{ yes: number; no: number }> {
+    const count = async (yes: boolean) => {
+      const { result } = await this.markets[mode].methods
+        .orders(market, yes)
+        .simulate({ from: this.address })
+      return Number(result)
+    }
+    const [yes, no] = await Promise.all([count(true), count(false)])
+    return { yes, no }
+  }
+
   /**
    * Proves and sends an order on `market` of the `mode` gate's market. The market's contract
    * refuses it with "no badge" unless this account holds the gate's badge.

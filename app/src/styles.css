@@ -38,8 +38,19 @@ button:disabled {
   opacity: 0.45;
 }
 
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
 a {
   color: var(--gold);
+}
+
+.mono {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .page {
@@ -47,6 +58,8 @@ a {
   margin: 0 auto;
   padding: 24px 16px 48px;
 }
+
+/* Header */
 
 .header {
   display: flex;
@@ -83,39 +96,41 @@ a {
   font-size: 14px;
 }
 
-.account code {
-  padding: 6px 10px;
-  background: var(--surface);
+.pill {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 999px;
 }
 
-.account-input {
-  width: min(420px, 100%);
-  padding: 8px 10px;
+.pill-verified {
+  color: var(--yes);
+  border-color: var(--yes);
+}
+
+.address {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 
-.badge-dot {
-  width: 10px;
-  height: 10px;
-  background: var(--text-muted);
-  border-radius: 50%;
+.address:hover {
+  border-color: var(--text-muted);
 }
 
-.badge-dot.on {
-  background: var(--yes);
+.address-action {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
-.link {
-  padding: 0;
-  color: var(--gold);
-  background: none;
-  border: none;
-}
+/* Layout */
 
 .main {
   display: grid;
@@ -135,15 +150,26 @@ a {
 }
 
 h1 {
-  margin: 0 0 16px;
+  margin: 0;
   font-size: 20px;
 }
 
+.markets-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
 .locked-hint {
-  margin: -8px 0 16px;
+  margin: 0;
   font-size: 14px;
   color: var(--text-muted);
 }
+
+/* Market cards */
 
 .market-list {
   display: grid;
@@ -176,6 +202,10 @@ h1 {
 }
 
 .market-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
   font-size: 13px;
   color: var(--text-muted);
 }
@@ -204,9 +234,33 @@ h1 {
   background: var(--no);
 }
 
+.order-slot {
+  min-height: 2.8em;
+  font-size: 13px;
+}
+
+.order-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.order-line.placed {
+  color: var(--yes);
+}
+
+.order-line.refused {
+  color: var(--no);
+}
+
+/* Gate panel */
+
 .panel {
   position: sticky;
   top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   padding: 20px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
@@ -217,13 +271,25 @@ h1 {
   border-color: var(--yes);
 }
 
+.panel-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+
+.panel.verified .panel-kicker {
+  color: var(--yes);
+}
+
 .panel h2 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 18px;
 }
 
 .panel p {
-  margin: 0 0 16px;
+  margin: 0;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-muted);
@@ -231,42 +297,49 @@ h1 {
 
 .dev-mode {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: flex-start;
-  margin-bottom: 16px;
+  padding: 10px 12px;
   font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.dev-mode strong {
+  color: var(--text);
+}
+
+.dev-mode input {
+  margin-top: 2px;
+}
+
+.gate-action {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.notice {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text-muted);
 }
 
-.primary {
-  width: 100%;
-  padding: 12px;
-  font-weight: 600;
-  color: #1d1504;
-  background: var(--gold);
-  border: none;
-  border-radius: 8px;
-}
-
-.scan {
-  text-align: center;
-}
-
-.scan img {
-  max-width: 100%;
-  height: auto;
-  background: #fff;
-  border-radius: 8px;
-}
-
-.scan p {
-  margin-top: 12px;
+.notice.refused {
+  color: var(--no);
 }
 
 .status {
   display: flex;
   gap: 10px;
   align-items: center;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
 }
 
 .spinner {
@@ -285,22 +358,10 @@ h1 {
   }
 }
 
-.failed p {
-  color: var(--no);
-}
-
-.toast {
-  margin-top: 16px;
-  padding: 12px 16px;
-  font-size: 14px;
-  background: var(--surface-raised);
-  border: 1px solid var(--gold);
-  border-radius: 8px;
-}
-
-.toast.refused {
-  color: var(--no);
-  border-color: var(--no);
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }
 
 .footer {
