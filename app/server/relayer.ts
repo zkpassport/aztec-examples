@@ -44,7 +44,7 @@ const WAIT = { timeout: 3600, interval: 2 } as const
 
 /**
  * Submits users' age proofs to Fortuna's two AgeGates, one that accepts only real passports and
- * one in dev mode that also accepts ZKPassport's mock passports, and reads their badges.
+ * one in dev mode that also accepts ZKPassport's mock passports.
  */
 export class Relayer {
   private queue: Promise<unknown> = Promise.resolve()
@@ -140,6 +140,11 @@ export class Relayer {
     return { live: this.gates.live.address.toString(), dev: this.gates.dev.address.toString() }
   }
 
+  /** The account that sends the claims, which the badge notes are tagged from */
+  address(): string {
+    return this.account.toString()
+  }
+
   /** Proves and sends `claim(user)` with the user's proof, one claim at a time. */
   claim(mode: GateMode, user: string, proof: ProofResult): Promise<string> {
     const run = this.queue.then(async () => {
@@ -158,13 +163,6 @@ export class Relayer {
     })
     this.queue = run.catch(() => undefined)
     return run
-  }
-
-  async hasBadge(mode: GateMode, user: string): Promise<boolean> {
-    const { result } = await this.gates[mode].methods
-      .has_badge(AztecAddress.fromStringUnsafe(user))
-      .simulate({ from: this.account })
-    return Boolean(result)
   }
 }
 

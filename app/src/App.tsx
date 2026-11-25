@@ -1,11 +1,10 @@
 import type { AztecNetwork } from "@zkpassport/sdk"
 import QRCode from "qrcode"
 import { useCallback, useEffect, useState } from "react"
-import { demoAddress, isAztecAddress, loadAccount, saveAccount, shortAddress } from "./account"
+import { shortAddress } from "./account"
 import { MARKETS, type Market } from "./markets"
 import { requestAgeProof } from "./verify"
-
-type GateMode = "live" | "dev"
+import { FortunaWallet, type GateMode } from "./wallet"
 
 type Flow =
   | { step: "idle" }
@@ -17,7 +16,8 @@ type Flow =
   | { step: "failed"; message: string }
 
 export function App() {
-  const [account, setAccount] = useState(loadAccount)
+  const [wallet, setWallet] = useState<FortunaWallet | undefined>()
+  const [walletError, setWalletError] = useState<string | undefined>()
   const [mode, setMode] = useState<GateMode>("dev")
   const [sourceChain, setSourceChain] = useState<string | undefined>()
   const [network, setNetwork] = useState<AztecNetwork | null>(null)
@@ -25,21 +25,35 @@ export function App() {
   const [flow, setFlow] = useState<Flow>({ step: "idle" })
   const [order, setOrder] = useState<string | undefined>()
 
+  const account = wallet?.address.toString()
+
   const refreshBadge = useCallback(async () => {
+    if (!wallet) {
+      return
+    }
     setBadge(undefined)
-    const response = await fetch(`/api/badge?mode=${mode}&user=${account}`)
-    const body = (await response.json()) as { badge?: boolean; error?: string }
-    setBadge(body.badge ?? false)
-  }, [account, mode])
+    setBadge(await wallet.hasBadge(mode))
+  }, [wallet, mode])
 
   useEffect(() => {
     fetch("/api/network")
       .then((response) => response.json())
-      .then((body: { sourceChain: string; network: AztecNetwork | null }) => {
-        setSourceChain(body.sourceChain)
-        setNetwork(body.network)
-      })
-      .catch(() => setSourceChain(undefined))
+      .then(
+        async (body: {
+          nodeUrl: string
+          gates: Record<GateMode, string>
+          relayer: string
+          sourceChain: string
+          network: AztecNetwork | null
+        }) => {
+          setSourceChain(body.sourceChain)
+          setNetwork(body.network)
+          setWallet(await FortunaWallet.connect(body.nodeUrl, body.gates, body.relayer))
+        },
+      )
+      .catch((error: unknown) =>
+        setWalletError(error instanceof Error ? error.message : String(error)),
+      )
   }, [])
 
   useEffect(() => {
@@ -48,6 +62,9 @@ export function App() {
 
   async function verify() {
     setFlow({ step: "idle" })
+    if (!account) {
+      return
+    }
     if (!network) {
       setFlow({
         step: "failed",
@@ -92,11 +109,6 @@ export function App() {
     })
   }
 
-  function switchAccount(address: string) {
-    setAccount(saveAccount(address))
-    setFlow({ step: "idle" })
-  }
-
   return (
     <div className="page">
       <header className="header">
@@ -107,7 +119,7 @@ export function App() {
             <div className="brand-tagline">Private prediction markets on Aztec</div>
           </div>
         </div>
-        <AccountBox account={account} badge={badge} onChange={switchAccount} />
+        <AccountBox account={account} badge={badge} error={walletError} />
       </header>
 
       <main className="main">
@@ -158,56 +170,36 @@ export function App() {
                 />
                 Developer mode: also accept ZKPassport's mock passports
               </label>
-              <VerifyFlow flow={flow} onStart={verify} />
+              {account ? (
+                <VerifyFlow flow={flow} onStart={verify} />
+              ) : (
+                <Status text="Setting up your Aztec account in this browser…" />
+              )}
             </div>
           )}
         </aside>
       </main>
 
       <footer className="footer">
-        A demo of ZKPassport on Aztec. Proofs are verified by an Aztec contract, and the badge is
-        public; the passport data behind it never leaves your phone.
+        A demo of ZKPassport on Aztec. Proofs are verified by an Aztec contract, and the badge is a
+        private note that only this browser's account can see; the passport data behind it never
+        leaves your phone.
       </footer>
     </div>
   )
 }
 
 function AccountBox(props: {
-  account: string
+  account: string | undefined
   badge: boolean | undefined
-  onChange: (address: string) => void
+  error: string | undefined
 }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState("")
-
-  if (editing) {
-    return (
-      <form
-        className="account"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (isAztecAddress(draft)) {
-            props.onChange(draft)
-            setEditing(false)
-          }
-        }}
-      >
-        <input
-          className="account-input"
-          placeholder="0x… your Aztec address"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value.trim())}
-        />
-        <button type="submit" disabled={!isAztecAddress(draft)}>
-          Use
-        </button>
-        <button type="button" className="link" onClick={() => setEditing(false)}>
-          Cancel
-        </button>
-      </form>
-    )
+  if (props.error) {
+    return <div className="account">Couldn't set up your Aztec account: {props.error}</div>
   }
-
+  if (!props.account) {
+    return <div className="account">Setting up your Aztec account…</div>
+  }
   return (
     <div className="account">
       <span
@@ -215,12 +207,6 @@ function AccountBox(props: {
         title={props.badge ? "18+ verified" : "Not verified"}
       />
       <code title={props.account}>{shortAddress(props.account)}</code>
-      <button type="button" className="link" onClick={() => setEditing(true)}>
-        Use my address
-      </button>
-      <button type="button" className="link" onClick={() => props.onChange(demoAddress())}>
-        New demo account
-      </button>
     </div>
   )
 }
