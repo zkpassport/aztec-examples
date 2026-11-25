@@ -5,11 +5,11 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract NationalityGate {
     use aztec::{
-        macros::{functions::external, notes::note, storage::storage},
+        macros::{functions::{external, initializer}, notes::note, storage::storage},
         messages::delivery::MessageDelivery,
         note::{note_getter_options::NoteGetterOptions, note_viewer_options::NoteViewerOptions},
         protocol::{address::AztecAddress, traits::{Deserialize, Packable, Serialize}},
-        state_vars::{Owned, PrivateSet},
+        state_vars::{Owned, PrivateSet, PublicImmutable},
     };
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{
@@ -29,12 +29,22 @@ pub contract NationalityGate {
 
     #[storage]
     struct Storage<Context> {
+        one_claim_per_passport: PublicImmutable<bool, Context>,
         badges: Owned<PrivateSet<BadgeNote, Context>, Context>,
+    }
+
+    /// `one_claim_per_passport` makes each passport claim once; otherwise the same passport can
+    /// claim again, as in testing.
+    #[external("public")]
+    #[initializer]
+    fn constructor(one_claim_per_passport: bool) {
+        self.storage.one_claim_per_passport.initialize(one_claim_per_passport);
     }
 
     /// Claim the badge for `user`: verifies a ZKPassport proof (outer_count_5, param
     /// commitments = {disclose, bind(user)}) whose disclosed nationality is NATIONALITY, burns
-    /// the unique identifier (one claim per passport) and mints `user` a private badge note.
+    /// the unique identifier if the gate allows one claim per passport, and mints `user` a
+    /// private badge note.
     ///
     /// The disclose payload rides in its own capsule, which verify_zkpassport_proof loads and
     /// checks against the proof. The proof must disclose the document type as well as the
@@ -50,7 +60,9 @@ pub contract NationalityGate {
 
         assert(verified.nationality() == NATIONALITY.as_bytes(), "nationality not accepted");
 
-        emit_uniqueness_nullifier(self.context, verified.unique_identifier);
+        if self.storage.one_claim_per_passport.read() {
+            emit_uniqueness_nullifier(self.context, verified.unique_identifier);
+        }
 
         // Constrained, so a relayer can't withhold the note from `user`
         self.storage.badges.at(user).insert(BadgeNote {}).deliver(

@@ -29,10 +29,14 @@ global FIXTURE_DOMAIN: Field = scope_hash("example.com");
 // Deploys the local network registry seeded with the age fixture's roots and vk, and an AgeGate
 // for the fixture's domain.
 unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
-    setup_gate(FIXTURE_DOMAIN, false)
+    setup_gate(FIXTURE_DOMAIN, false, true)
 }
 
-unconstrained fn setup_gate(domain: Field, dev_mode: bool) -> (TestEnvironment, AztecAddress) {
+unconstrained fn setup_gate(
+    domain: Field,
+    dev_mode: bool,
+    one_claim_per_passport: bool,
+) -> (TestEnvironment, AztecAddress) {
     let mut env = TestEnvironment::new();
 
     let _ = deploy_local_network_registry(
@@ -56,7 +60,7 @@ unconstrained fn setup_gate(domain: Field, dev_mode: bool) -> (TestEnvironment, 
     let deployer = env.create_light_account();
     let age_gate = env.deploy("AgeGate").with_public_initializer(
         deployer,
-        AgeGate::interface().constructor(domain, dev_mode),
+        AgeGate::interface().constructor(domain, dev_mode, one_claim_per_passport),
     );
     (env, age_gate)
 }
@@ -155,7 +159,7 @@ unconstrained fn assert_has_badge_fails_without_claim() {
 // A gate deployed with dev mode still accepts a real passport's proof.
 #[test]
 unconstrained fn dev_mode_gate_accepts_a_real_passport() {
-    let (mut env, age_gate) = setup_gate(FIXTURE_DOMAIN, true);
+    let (mut env, age_gate) = setup_gate(FIXTURE_DOMAIN, true, true);
     let user = env.create_light_account();
     let relayer = env.create_light_account();
     deliver_blob(
@@ -171,7 +175,7 @@ unconstrained fn dev_mode_gate_accepts_a_real_passport() {
 
 #[test(should_fail_with = "wrong service domain")]
 unconstrained fn claim_for_another_domain_fails() {
-    let (mut env, age_gate) = setup_gate(scope_hash("fortuna.example"), false);
+    let (mut env, age_gate) = setup_gate(scope_hash("fortuna.example"), false, true);
     let user = AztecAddress::from_field(AGE_FIXTURE_BIND_ADDRESS);
 
     let relayer = env.create_light_account();
@@ -235,4 +239,24 @@ unconstrained fn second_claim_same_passport_fails() {
     // Same fixture again → same unique identifier → tx must be rejected (nullifier collision).
     deliver_capsule(&mut env, age_gate, relayer);
     let _ = env.call_private(relayer, AgeGate::at(age_gate).claim(user));
+}
+
+// A gate deployed without one claim per passport lets the same passport claim again
+#[test]
+unconstrained fn a_passport_claims_again_when_the_gate_allows_it() {
+    let (mut env, age_gate) = setup_gate(FIXTURE_DOMAIN, false, false);
+    let user = env.create_light_account();
+    let relayer = env.create_light_account();
+
+    for _ in 0..2 {
+        deliver_blob(
+            &mut env,
+            age_gate,
+            relayer,
+            bound_to(user, age_fixture_blob_for_txe()),
+        );
+        let _ = env.call_private(relayer, AgeGate::at(age_gate).claim(user));
+    }
+
+    assert(env.execute_utility(AgeGate::at(age_gate).has_badge(user)));
 }

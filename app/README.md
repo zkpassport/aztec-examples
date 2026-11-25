@@ -16,7 +16,7 @@ is over 18 and nothing else, and nothing public names the user.
   relayer's account. An order is a `place_order` transaction the wallet proves in the browser; the
   market calls the gate's `assert_has_badge` for the sender, which only the holder's wallet can
   satisfy, from its own notes. Fees go through the network's sponsored fee contract. Clearing the
-  browser's storage loses the account and its badge, and a passport claims once per gate.
+  browser's storage loses the account and its badge.
 - `server/`: the relayer. On first start it deploys two `AgeGate`s for the page's domain, one that
   accepts only real passports and one in dev mode that also accepts ZKPassport's mock passports,
   and a `FortunaMarket` for each. It then proves and sends each `claim(user)` with the user's
@@ -50,6 +50,9 @@ The relayer reads:
 - `REGISTRY_ADDRESS`: ZKPassport's registry on that network, the testnet's by default;
 - `APP_DOMAIN`: the host the page is served from, `localhost` by default. Proofs commit to it, so
   the gates only accept proofs requested from that host;
+- `ONE_CLAIM_PER_PASSPORT`: `1` deploys gates on which each passport claims once. By default a
+  passport can claim again, so the same passport can test repeatedly. The two kinds of gate are
+  recorded apart;
 - `PORT`: 3001 by default.
 
 `server/deployments.json` records the gates and markets it deployed, by node and domain. A recorded

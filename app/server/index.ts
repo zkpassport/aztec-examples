@@ -13,6 +13,7 @@ const relayer = await Relayer.start({
     process.env.REGISTRY_ADDRESS ??
     "0x019de2b2c83e178733dce20707949a17ec3465caba6ccd24b3d861f151bf0f30",
   domain: process.env.APP_DOMAIN ?? "localhost",
+  oneClaimPerPassport: process.env.ONE_CLAIM_PER_PASSPORT === "1",
   deploymentsPath: new URL("./deployments.json", import.meta.url).pathname,
 })
 

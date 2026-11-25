@@ -45,6 +45,8 @@ export interface RelayerConfig {
   registryAddress: string
   /** The domain the app is served from, which its ZKPassport requests carry */
   domain: string
+  /** Whether each passport claims once on the gates, or can claim again, as in testing */
+  oneClaimPerPassport: boolean
   deploymentsPath: string
 }
 
@@ -144,8 +146,14 @@ export class Relayer {
     const gates = {} as Record<GateMode, Contract>
     const markets = {} as Record<GateMode, Contract>
     for (const mode of ["live", "dev"] as const) {
-      gates[mode] = await deployed(mode, ageGate, [domainHash, mode === "dev"])
-      markets[mode] = await deployed(`${mode}Market`, fortunaMarket, [gates[mode].address])
+      // Gates with either uniqueness setting are recorded apart, so switching it never reuses the other
+      const name = config.oneClaimPerPassport ? mode : `${mode}Repeatable`
+      gates[mode] = await deployed(name, ageGate, [
+        domainHash,
+        mode === "dev",
+        config.oneClaimPerPassport,
+      ])
+      markets[mode] = await deployed(`${name}Market`, fortunaMarket, [gates[mode].address])
       console.log(
         `${mode} AgeGate: ${gates[mode].address}, FortunaMarket: ${markets[mode].address}`,
       )
