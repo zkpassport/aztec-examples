@@ -44,7 +44,7 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress) {
     let deployer = env.create_light_account();
     let age_gate = env.deploy("@age_gate_contract/AgeGate").with_public_initializer(
         deployer,
-        AgeGate::interface().constructor(scope_hash("example.com"), false),
+        AgeGate::interface().constructor(scope_hash("example.com"), false, true),
     );
     let market = env.deploy("FortunaMarket").with_public_initializer(
         deployer,

@@ -47,13 +47,13 @@ export class AgeGateContract extends ContractBase {
    * @param instantiation - Optional address-affecting parameters (salt, deployer / universalDeploy, publicKeys).
    *                       Salt defaults to a random value; the deployer is locked lazily from the first send-time `from`.
    */
-  public static deploy(wallet: Wallet, domain: FieldLike, dev_mode: boolean, instantiation?: DeployInstantiationOptions) {
+  public static deploy(wallet: Wallet, domain: FieldLike, dev_mode: boolean, one_claim_per_passport: boolean, instantiation?: DeployInstantiationOptions) {
     return DeployMethod.create<AgeGateContract>(
       wallet,
       {
         artifact: AgeGateContractArtifact,
         postDeployCtor: (instance, wallet) => AgeGateContract.at(instance.address, wallet),
-        args: [domain, dev_mode],
+        args: [domain, dev_mode, one_claim_per_passport],
       },
       instantiation,
     );
@@ -101,7 +101,7 @@ export class AgeGateContract extends ContractBase {
       slot: new Fr(1n),
     },
 badges: {
-      slot: new Fr(4n),
+      slot: new Fr(5n),
     }
       } as ContractStorageLayout<'config' | 'badges'>;
     }
@@ -116,8 +116,8 @@ badges: {
     /** claim(user: struct) */
     claim: ((user: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(domain: field, dev_mode: boolean) */
-    constructor: ((domain: FieldLike, dev_mode: boolean) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(domain: field, dev_mode: boolean, one_claim_per_passport: boolean) */
+    constructor: ((domain: FieldLike, dev_mode: boolean, one_claim_per_passport: boolean) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** has_badge(user: struct) */
     has_badge: ((user: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

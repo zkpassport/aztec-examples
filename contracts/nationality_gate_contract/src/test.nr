@@ -23,6 +23,10 @@ use zkpassport_registry_contract::local_network_registry::{
 // Deploys the local network registry seeded with the age fixture's roots and vk, which the blobs
 // below keep, and NationalityGate.
 unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
+    setup_gate(true)
+}
+
+unconstrained fn setup_gate(one_claim_per_passport: bool) -> (TestEnvironment, AztecAddress) {
     let mut env = TestEnvironment::new();
 
     let _ = deploy_local_network_registry(
@@ -43,7 +47,11 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress) {
     // keeps the proof inside the 7-day validity period.
     env.mine_block_at(AGE_FIXTURE_CURRENT_DATE + 86401);
 
-    let gate = env.deploy("NationalityGate").without_initializer();
+    let deployer = env.create_light_account();
+    let gate = env.deploy("NationalityGate").with_public_initializer(
+        deployer,
+        NationalityGate::interface().constructor(one_claim_per_passport),
+    );
     (env, gate)
 }
 
@@ -217,4 +225,44 @@ unconstrained fn claim_without_disclose_capsule_fails() {
     );
 
     let _ = env.call_private(relayer, NationalityGate::at(gate).claim(user));
+}
+
+// Claims the badge for `user` with a French passport's disclose proof
+unconstrained fn claim_as_french(
+    env: &mut TestEnvironment,
+    gate: AztecAddress,
+    user: AztecAddress,
+) {
+    let relayer = env.create_light_account();
+    let (mask, bytes) = passport_disclosure("FRA");
+    deliver_capsules(
+        env,
+        gate,
+        relayer,
+        bound_to(user, disclose_blob(mask, bytes)),
+        Option::some(disclose_payload(mask, bytes)),
+    );
+    let _ = env.call_private(relayer, NationalityGate::at(gate).claim(user));
+}
+
+// The nullifier collision fails outside the contract's asserts, so no message is pinned
+#[test(should_fail)]
+unconstrained fn second_claim_same_passport_fails() {
+    let (mut env, gate) = setup();
+    let user = env.create_light_account();
+
+    claim_as_french(&mut env, gate, user);
+    claim_as_french(&mut env, gate, user);
+}
+
+// A gate deployed without one claim per passport lets the same passport claim again
+#[test]
+unconstrained fn a_passport_claims_again_when_the_gate_allows_it() {
+    let (mut env, gate) = setup_gate(false);
+    let user = env.create_light_account();
+
+    claim_as_french(&mut env, gate, user);
+    claim_as_french(&mut env, gate, user);
+
+    assert(env.execute_utility(NationalityGate::at(gate).has_badge(user)));
 }

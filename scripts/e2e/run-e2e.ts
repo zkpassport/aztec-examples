@@ -138,7 +138,7 @@ async function main() {
   log(`registry at ${registry.address}`)
 
   const [{ contract: ageGate }] = await timed("deploy age gate", () =>
-    AgeGateContract.deploy(wallet, FIXTURE_DOMAIN, false).send({ from: admin, wait: WAIT }),
+    AgeGateContract.deploy(wallet, FIXTURE_DOMAIN, false, true).send({ from: admin, wait: WAIT }),
   )
   log(`age gate at ${ageGate.address}`)
 
