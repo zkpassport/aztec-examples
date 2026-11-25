@@ -137,17 +137,16 @@ mod test {
     }
 
     // The age fixture is a real outer_count_5 proof with param commitments {age(18, 0), bind}.
-    // Swapping its age commitment for a strict sanctions commitment, the mode `sanctions()` asks
-    // for, gives a proof of {sanctions, bind} with the fixture's roots, date and vk. Its bind
-    // moves to `user` too: the fixture's own address has no keys in TXE, so nobody could read a
-    // badge minted to it.
+    // Swapping its age commitment for a sanctions commitment gives a proof of {sanctions, bind}
+    // with the fixture's roots, date and vk. Its bind moves to `user` too: the fixture's own
+    // address has no keys in TXE, so nobody could read a badge minted to it.
     fn sanctions_blob(root: Field, user: AztecAddress) -> [Field; 585] {
         let fixture_bind = bind_commitment(AGE_FIXTURE_BIND_ADDRESS, TXE_CHAIN_ID);
         let mut blob = age_fixture_blob_for_txe();
         let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
         for i in params_start..params_start + 2 {
             if blob[i] == age_commitment(18, 0) {
-                blob[i] = sanctions_commitment(root, true);
+                blob[i] = sanctions_commitment(root, false);
             } else if blob[i] == fixture_bind {
                 blob[i] = bind_commitment(user.to_field(), TXE_CHAIN_ID);
             }
