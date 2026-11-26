@@ -3,20 +3,25 @@
 Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec library in
 [zkpassport-packages](https://github.com/zkpassport/zkpassport-packages/tree/main/packages/aztec).
 
-| Contract                              | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contracts/age_gate_contract`         | An 18+ gate. `claim(user)` verifies a proof of age that is bound to `user` on the gate's network, and mints `user` a private badge note. Since the proof is bound to `user`, anyone may submit the transaction, and nothing public names `user`. A deployment sets the domain its requests come from, whether it also accepts ZKPassport's mock passports, and whether each passport claims once (a uniqueness nullifier) or can claim again, as in testing. |
-| `contracts/fortuna_market_contract`   | Fortuna's market. `place_order` calls the age gate's `assert_has_badge` for the sender, so only an account whose wallet holds the badge note can trade.                                                                                                                                                                                                                                                                                                      |
-| `contracts/nationality_gate_contract` | A gate on disclosed data. `claim(user)` verifies a proof that discloses the nationality, reads it from the disclosed bytes, and grants the badge only to French nationals. A deployment sets whether each passport claims once.                                                                                                                                                                                                                              |
-| `contracts/sanctions_gate_contract`   | A sanctions-screened gate. `claim(user)` verifies a proof, bound to `user` on the gate's network, that its holder is not on the sanctions lists, and mints `user` a private badge note. A deployment sets whether each passport claims once.                                                                                                                                                                                                                 |
+| Contract                                    | What it shows                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts/zkpassport_credentials_contract` | Private ZKPassport credentials. The deployer sets the domain its requests come from and whether it also accepts ZKPassport's mock passports, and creates policies with `create_policy`. A policy is a requirement (a minimum age, a nationality, or not being on the sanctions lists) and whether each passport claims its credential once (a uniqueness nullifier per policy) or can claim it again, as in testing. |
+| `contracts/fortuna_market_contract`         | Fortuna's market. `place_order` calls the credentials contract's `assert_has_credential` for the sender and the market's policy, so only an account whose wallet holds that credential note can trade.                                                                                                                                                                                                               |
 
-The sanctions gate's client asks the ZKPassport SDK for `.sanctions()` and the bind, and stashes the
-sanctions root the proof was screened against, the proof result's
-`committedInputs.exclusion_check_sanctions.rootHash`, in the gate's sanctions capsule
+A user claims a policy's credential with `claim_age`, `claim_nationality` or `claim_sanctions`,
+which verify a proof bound to the user on the contract's network and mint the user a private
+credential note of that policy. Since the proof is bound to the user, anyone may submit the
+transaction, and nothing public names the user. Other contracts check the note with
+`assert_has_credential(user, policy_id)`, and the holder's wallet reads it with `has_credential`.
+
+`claim_nationality` reads the nationality from the proof's disclosed bytes, which ride in the
+disclose capsule. For `claim_sanctions`, the client asks the ZKPassport SDK for `.sanctions()` and
+the bind, and stashes the sanctions root the proof was screened against, the proof result's
+`committedInputs.exclusion_check_sanctions.rootHash`, in the sanctions capsule
 (`SANCTIONS_CAPSULE_SLOT`, 3) next to the proof capsule.
 
-[`app/`](app/README.md) is Fortuna, an 18+ prediction market on the Aztec testnet that uses the age
-gate with proofs from the ZKPassport app.
+[`app/`](app/README.md) is Fortuna, an 18+ prediction market on the Aztec testnet that uses an 18+
+credential with proofs from the ZKPassport app.
 
 ## Depending on the library
 
@@ -63,9 +68,10 @@ verification opcode. The e2e below verifies a real proof.
 
 ## End-to-end test on a local network
 
-`scripts/e2e/run-e2e.ts` deploys the local network registry and the age gate to a local Aztec
-network, seeds the registry, makes a real `claim()` transaction with the age fixture, and checks
-that a second claim with the same passport and a claim with a tampered proof both fail.
+`scripts/e2e/run-e2e.ts` deploys the local network registry and the credentials contract with an 18+
+policy to a local Aztec network, seeds the registry, makes a real `claim_age()` transaction with the
+age fixture, and checks that a second claim with the same passport and a claim with a tampered proof
+both fail.
 
 Like an app, it takes the registry's artifact and the proof capsule from
 [`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec), at the version published
@@ -83,9 +89,9 @@ cd scripts && npm ci && npm run e2e
 
 `AZTEC_NODE_URL` sets the node (default `http://localhost:8080`).
 
-`scripts/artifacts/` holds the age gate's TS binding, which the e2e uses. After a change to its ABI,
-regenerate it from the repo root:
+`scripts/artifacts/` holds the credentials contract's TS binding, which the e2e uses. After a change
+to its ABI, regenerate it from the repo root:
 
 ```bash
-aztec codegen target/age_gate_contract-AgeGate.json -o scripts/artifacts
+aztec codegen target/zkpassport_credentials_contract-ZKPassportCredentials.json -o scripts/artifacts
 ```

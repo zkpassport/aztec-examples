@@ -28,19 +28,19 @@ export function App() {
   const [mode, setMode] = useState<GateMode>("dev")
   const [sourceChain, setSourceChain] = useState<string | undefined>()
   const [network, setNetwork] = useState<AztecNetwork | null>(null)
-  const [badge, setBadge] = useState<boolean | undefined>()
+  const [credential, setCredential] = useState<boolean | undefined>()
   const [claim, setClaim] = useState<Claim>({ status: "idle" })
   const [orders, setOrders] = useState<Record<number, OrderState>>({})
   const [counts, setCounts] = useState<Counts>({})
 
   const account = wallet?.address.toString()
 
-  const refreshBadge = useCallback(async () => {
+  const refreshCredential = useCallback(async () => {
     if (!wallet) {
       return
     }
-    setBadge(undefined)
-    setBadge(await wallet.hasBadge(mode))
+    setCredential(undefined)
+    setCredential(await wallet.hasCredential(mode))
   }, [wallet, mode])
 
   const refreshCounts = useCallback(async () => {
@@ -59,8 +59,9 @@ export function App() {
       .then(
         async (body: {
           nodeUrl: string
-          gates: Record<GateMode, string>
+          credentials: Record<GateMode, string>
           markets: Record<GateMode, string>
+          policyId: number
           relayer: string
           sourceChain: string
           network: AztecNetwork | null
@@ -76,11 +77,11 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    refreshBadge().catch(() => setBadge(false))
+    refreshCredential().catch(() => setCredential(false))
     refreshCounts().catch(() => setCounts({}))
     setOrders({})
     setClaim({ status: "idle" })
-  }, [refreshBadge, refreshCounts])
+  }, [refreshCredential, refreshCounts])
 
   async function trade(marketIndex: number, side: Side) {
     if (!wallet) {
@@ -99,8 +100,8 @@ export function App() {
         [marketIndex]: {
           status: "refused",
           side,
-          message: message.includes("no badge")
-            ? "The market contract refused it: this account has no 18+ badge."
+          message: message.includes("no credential")
+            ? "The market contract refused it: this account has no 18+ credential."
             : message,
         },
       }))
@@ -108,7 +109,7 @@ export function App() {
   }
 
   // The hosted flow hands back the proofs; the relayer proves the claim with the outer one
-  async function claimBadge(proofs: ProofResult[]): Promise<boolean> {
+  async function claimCredential(proofs: ProofResult[]): Promise<boolean> {
     const proof = proofs.find((candidate) => candidate.name?.startsWith("outer_count_"))
     if (!proof) {
       setClaim({
@@ -132,7 +133,7 @@ export function App() {
       return false
     }
     setClaim({ status: "claimed", txHash: body.txHash })
-    await refreshBadge()
+    await refreshCredential()
     return true
   }
 
@@ -146,15 +147,17 @@ export function App() {
             <div className="brand-tagline">Private prediction markets on Aztec</div>
           </div>
         </div>
-        <AccountChip account={account} badge={badge} error={walletError} />
+        <AccountChip account={account} credential={credential} error={walletError} />
       </header>
 
       <main className="main">
         <section className="markets">
           <div className="markets-heading">
             <h1>Markets</h1>
-            {badge === false && (
-              <p className="locked-hint">Orders need the 18+ badge, which the market checks.</p>
+            {credential === false && (
+              <p className="locked-hint">
+                Orders need the 18+ credential, which the market checks.
+              </p>
             )}
           </div>
           <div className="market-list">
@@ -172,10 +175,10 @@ export function App() {
         </section>
 
         <aside className="gate">
-          {badge ? (
+          {credential ? (
             <div className="panel verified">
               <div className="panel-kicker">Verified</div>
-              <h2>You hold the 18+ badge</h2>
+              <h2>You hold the 18+ credential</h2>
               <p>
                 A private note in this browser's Aztec account. Fortuna learned that you're over 18
                 and nothing else.
@@ -217,13 +220,14 @@ export function App() {
                       bind={{ account: account as `0x${string}`, chainId: getIdFromChain(network) }}
                       mode="compressed"
                       // Sepolia's registries, which the testnet's ZKPassport registry mirrors, take
-                      // the SDK's dev mode; the gate decides whether mock passports are accepted
+                      // the SDK's dev mode; the credentials contract decides whether mock passports
+                      // are accepted
                       service={{
                         devMode: sourceChain === "ethereum_sepolia",
                         uniqueIdentifierType: "non-salted",
                       }}
                       style={{ label: "Verify my age" }}
-                      onSuccess={({ proofs }) => claimBadge(proofs)}
+                      onSuccess={({ proofs }) => claimCredential(proofs)}
                       onError={(error) => setClaim({ status: "failed", message: error.message })}
                     />
                   ) : undefined
@@ -235,9 +239,9 @@ export function App() {
       </main>
 
       <footer className="footer">
-        A demo of ZKPassport on Aztec. An Aztec contract verifies the proof, the badge is a private
-        note only this browser's account can see, and the passport data behind it never leaves your
-        phone. No funds move.
+        A demo of ZKPassport on Aztec. An Aztec contract verifies the proof, the credential is a
+        private note only this browser's account can see, and the passport data behind it never
+        leaves your phone. No funds move.
       </footer>
     </div>
   )
@@ -264,10 +268,10 @@ function GateAction(props: {
     <div className="gate-action">
       {props.verifier}
       {props.claim.status === "claiming" && (
-        <Status text="Fortuna's relayer is claiming your badge on Aztec…" />
+        <Status text="Fortuna's relayer is claiming your credential on Aztec…" />
       )}
       {props.claim.status === "failed" && (
-        <p className="notice refused">Couldn't claim the badge: {props.claim.message}</p>
+        <p className="notice refused">Couldn't claim the credential: {props.claim.message}</p>
       )}
     </div>
   )
@@ -275,7 +279,7 @@ function GateAction(props: {
 
 function AccountChip(props: {
   account: string | undefined
-  badge: boolean | undefined
+  credential: boolean | undefined
   error: string | undefined
 }) {
   const [copied, setCopied] = useState(false)
@@ -298,10 +302,14 @@ function AccountChip(props: {
   return (
     <div className="account">
       <span
-        className={`pill ${props.badge ? "pill-verified" : ""}`}
-        title={props.badge === undefined ? "Checking your notes" : undefined}
+        className={`pill ${props.credential ? "pill-verified" : ""}`}
+        title={props.credential === undefined ? "Checking your notes" : undefined}
       >
-        {props.badge === undefined ? "Checking…" : props.badge ? "18+ verified" : "Not verified"}
+        {props.credential === undefined
+          ? "Checking…"
+          : props.credential
+            ? "18+ verified"
+            : "Not verified"}
       </span>
       <button type="button" className="address" title={account} onClick={copy}>
         <code>{shortAddress(account)}</code>

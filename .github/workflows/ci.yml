@@ -72,7 +72,7 @@ jobs:
       - name: Run tests
         run: aztec test
 
-      # The e2e needs a local Aztec network, so CI only typechecks it. Its age gate binding imports
+      # The e2e needs a local Aztec network, so CI only typechecks it. Its credentials binding imports
       # the artifact compiled above, and the registry comes from @zkpassport/aztec.
       - name: Install e2e dependencies
         run: npm ci
