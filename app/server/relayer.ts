@@ -23,8 +23,8 @@ import { getIdFromChain } from "@zkpassport/utils"
 import { getScopeHash } from "@zkpassport/utils/circuit-matcher"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import AgeGateJson from "../../target/age_gate_contract-AgeGate.json" with { type: "json" }
 import FortunaMarketJson from "../../target/fortuna_market_contract-FortunaMarket.json" with { type: "json" }
+import ZKPassportCredentialsJson from "../../target/zkpassport_credentials_contract-ZKPassportCredentials.json" with { type: "json" }
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
 // The SDK's ESM build doesn't load in Node: it imports `buffer/` and named exports of a CommonJS
@@ -36,6 +36,16 @@ type ZKPassport = InstanceType<typeof ZKPassport>
 
 export type GateMode = "live" | "dev"
 
+/**
+ * The 18+ policies the relayer creates on each credentials contract: one claim per passport, or
+ * repeatable
+ */
+const ADULTS_ONCE = 1
+const ADULTS_REPEATABLE = 2
+
+/** ZKPassportCredentials' AGE_MIN requirement */
+const AGE_MIN = 1
+
 /** The chain whose registries the network's ZKPassport registry mirrors, which proofs must be made against */
 export type SourceChain = "ethereum" | "ethereum_sepolia"
 
@@ -45,7 +55,10 @@ export interface RelayerConfig {
   registryAddress: string
   /** The domain the app is served from, which its ZKPassport requests carry */
   domain: string
-  /** Whether each passport claims once on the gates, or can claim again, as in testing */
+  /**
+   * Whether the markets take the 18+ policy each passport claims once, or the repeatable one, as in
+   * testing
+   */
   oneClaimPerPassport: boolean
   deploymentsPath: string
 }
@@ -55,16 +68,18 @@ type Fee = { paymentMethod: SponsoredFeePaymentMethod } | undefined
 const WAIT = { timeout: 3600, interval: 2 } as const
 
 /**
- * Submits users' age proofs to Fortuna's two AgeGates, one that accepts only real passports and
- * one in dev mode that also accepts ZKPassport's mock passports.
+ * Submits users' age proofs to Fortuna's two ZKPassportCredentials contracts, one that accepts only
+ * real passports and one in dev mode that also accepts ZKPassport's mock passports.
  */
 export class Relayer {
   private queue: Promise<unknown> = Promise.resolve()
 
   private constructor(
-    private readonly gates: Record<GateMode, Contract>,
-    /** The market each gate's badge opens */
+    private readonly credentials: Record<GateMode, Contract>,
+    /** The market each credentials contract's policy opens */
     private readonly markets: Record<GateMode, Contract>,
+    /** The 18+ policy the markets take */
+    readonly policyId: number,
     private readonly account: AztecAddress,
     private readonly fee: Fee,
     private readonly zkpassport: ZKPassport,
@@ -74,8 +89,8 @@ export class Relayer {
   ) {}
 
   /**
-   * Connects the relayer's account and deploys the gates the deployments file does not list on the
-   * node. On a local network the account is a test account, and the relayer sets up the registry.
+   * Connects the relayer's account and deploys the contracts the deployments file does not list on
+   * the node. On a local network the account is a test account, and the relayer sets up the registry.
    */
   static async start(config: RelayerConfig): Promise<Relayer> {
     const node = createAztecNodeClient(config.nodeUrl)
@@ -113,11 +128,12 @@ export class Relayer {
     const key = `${config.nodeUrl}|${config.domain}`
 
     // Reuses the contract recorded under `name` while the node has it with this artifact's code,
-    // and deploys it otherwise
+    // and deploys it otherwise, running `setUp` on it before recording it
     async function deployed(
       name: string,
       contractArtifact: ContractArtifact,
       args: unknown[],
+      setUp?: (contract: Contract) => Promise<void>,
     ): Promise<Contract> {
       const recorded = deployments[key]?.[name]
       const instance = recorded
@@ -135,27 +151,46 @@ export class Relayer {
         ...(fee ? { fee } : {}),
         wait: WAIT,
       })
+      await setUp?.(contract)
       deployments[key] = { ...deployments[key], [name]: contract.address.toString() }
       writeFileSync(config.deploymentsPath, JSON.stringify(deployments, null, 2) + "\n")
       return contract
     }
 
-    const ageGate = artifact(AgeGateJson)
+    const zkpassportCredentials = artifact(ZKPassportCredentialsJson)
     const fortunaMarket = artifact(FortunaMarketJson)
     const domainHash = new Fr(getScopeHash(config.domain))
-    const gates = {} as Record<GateMode, Contract>
+    const policyId = config.oneClaimPerPassport ? ADULTS_ONCE : ADULTS_REPEATABLE
+    const credentials = {} as Record<GateMode, Contract>
     const markets = {} as Record<GateMode, Contract>
     for (const mode of ["live", "dev"] as const) {
-      // Gates with either uniqueness setting are recorded apart, so switching it never reuses the other
-      const name = config.oneClaimPerPassport ? mode : `${mode}Repeatable`
-      gates[mode] = await deployed(name, ageGate, [
-        domainHash,
-        mode === "dev",
-        config.oneClaimPerPassport,
+      credentials[mode] = await deployed(
+        `${mode}Credentials`,
+        zkpassportCredentials,
+        [domainHash, mode === "dev"],
+        async (contract) => {
+          for (const [id, oneClaimPerPassport] of [
+            [ADULTS_ONCE, true],
+            [ADULTS_REPEATABLE, false],
+          ] as const) {
+            await contract.methods
+              .create_policy(
+                id,
+                { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] },
+                oneClaimPerPassport,
+              )
+              .send({ from: account, ...(fee ? { fee } : {}), wait: WAIT })
+          }
+        },
+      )
+      // A market per policy, so switching the policy never reuses the other's market
+      const marketName = config.oneClaimPerPassport ? `${mode}Market` : `${mode}RepeatableMarket`
+      markets[mode] = await deployed(marketName, fortunaMarket, [
+        credentials[mode].address,
+        policyId,
       ])
-      markets[mode] = await deployed(`${name}Market`, fortunaMarket, [gates[mode].address])
       console.log(
-        `${mode} AgeGate: ${gates[mode].address}, FortunaMarket: ${markets[mode].address}`,
+        `${mode} ZKPassportCredentials: ${credentials[mode].address}, FortunaMarket: ${markets[mode].address}`,
       )
     }
 
@@ -167,36 +202,50 @@ export class Relayer {
       (name) => getIdFromChain(name) === rollupVersion,
     )
     const zkpassport = new ZKPassport(config.domain)
-    return new Relayer(gates, markets, account, fee, zkpassport, sourceChain, network)
+    return new Relayer(
+      credentials,
+      markets,
+      policyId,
+      account,
+      fee,
+      zkpassport,
+      sourceChain,
+      network,
+    )
   }
 
-  gateAddresses(): Record<GateMode, string> {
-    return { live: this.gates.live.address.toString(), dev: this.gates.dev.address.toString() }
+  credentialsAddresses(): Record<GateMode, string> {
+    return {
+      live: this.credentials.live.address.toString(),
+      dev: this.credentials.dev.address.toString(),
+    }
   }
 
   marketAddresses(): Record<GateMode, string> {
     return { live: this.markets.live.address.toString(), dev: this.markets.dev.address.toString() }
   }
 
-  /** The account that sends the claims, which the badge notes are tagged from */
+  /** The account that sends the claims, which the credential notes are tagged from */
   address(): string {
     return this.account.toString()
   }
 
-  /** Proves and sends `claim(user)` with the user's proof, one claim at a time. */
+  /** Proves and sends `claim_age(user, policy)` with the user's proof, one claim at a time. */
   claim(mode: GateMode, user: string, proof: ProofResult): Promise<string> {
     const run = this.queue.then(async () => {
-      const gate = this.gates[mode]
+      const credentials = this.credentials[mode]
       const params = await this.zkpassport.getAztecVerifierParameters({
         proof,
         network: this.network,
       })
-      const { receipt } = await gate.methods.claim(AztecAddress.fromStringUnsafe(user)).send({
-        from: this.account,
-        capsules: toAztecCapsules(params, gate.address, this.account),
-        ...(this.fee ? { fee: this.fee } : {}),
-        wait: WAIT,
-      })
+      const { receipt } = await credentials.methods
+        .claim_age(AztecAddress.fromStringUnsafe(user), this.policyId)
+        .send({
+          from: this.account,
+          capsules: toAztecCapsules(params, credentials.address, this.account),
+          ...(this.fee ? { fee: this.fee } : {}),
+          wait: WAIT,
+        })
       return receipt.txHash.toString()
     })
     this.queue = run.catch(() => undefined)
