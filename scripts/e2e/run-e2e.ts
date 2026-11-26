@@ -11,6 +11,7 @@
  *   DOUBLE CLAIM REJECTED — the uniqueness nullifier collides
  *   TAMPERED PROOF REJECTED — a one-bit-flipped proof fails client-side proving
  */
+import { loadContractArtifact, type NoirCompiledContract } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import { Contract } from "@aztec-labs/aztec.js/contracts"
 import { Fr } from "@aztec-labs/aztec.js/fields"
@@ -26,7 +27,6 @@ import {
   PROOF_CAPSULE_SLOT,
   PROOF_FIELDS,
   VK_FIELDS,
-  ZKPassportRegistryArtifact,
 } from "@zkpassport/aztec"
 import { circuitVersionToBytes32 } from "@zkpassport/utils"
 import { ZKPassportCredentialsContract } from "../artifacts/ZKPassportCredentials.js"
@@ -130,12 +130,23 @@ async function main() {
   log(`accounts admin=${admin} operator=${operator} user=${user}`)
 
   // ---- 1. Deploy -----------------------------------------------------------
-  // The registry from @zkpassport/aztec, the same contract class as the registry the contracts'
-  // zkpassport-packages dependency deploys in TXE
+  // The registry compiled at the contracts' zkpassport-packages tag, whose address their verifier
+  // looks for on a local network
+  const registryArtifact = loadContractArtifact(
+    JSON.parse(
+      readFileSync(
+        new URL(
+          "../../zkpassport/target/zkpassport_registry_contract-ZKPassportRegistry.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as NoirCompiledContract,
+  )
   const [{ contract: registry }] = await timed("deploy registry", () =>
     Contract.deploy(
       wallet,
-      ZKPassportRegistryArtifact,
+      registryArtifact,
       [admin, operator, MODE_VALID_WITHIN_WINDOW, VALIDITY_WINDOW],
       undefined,
       { salt: LOCAL_NETWORK_REGISTRY_SALT, universalDeploy: true },
