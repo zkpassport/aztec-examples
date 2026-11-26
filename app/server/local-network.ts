@@ -1,3 +1,4 @@
+import { loadContractArtifact, type NoirCompiledContract } from "@aztec-labs/aztec.js/abi"
 import { AztecAddress } from "@aztec-labs/aztec.js/addresses"
 import {
   Contract,
@@ -7,10 +8,10 @@ import { Fr } from "@aztec-labs/aztec.js/fields"
 import type { createAztecNodeClient } from "@aztec-labs/aztec.js/node"
 import { createAztecNodeDebugClient } from "@aztec-labs/stdlib/interfaces/client"
 import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded"
-import { registerZKPassportRegistry, ZKPassportRegistryArtifact } from "@zkpassport/aztec"
 import { createRegistryClient } from "@zkpassport/registry"
 import { circuitVersionToBytes32 } from "@zkpassport/utils/registry"
 import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 
 /** The L1 chain id of a local network, whose Anvil runs on Ethereum's dev chain id */
 export const LOCAL_NETWORK_L1_CHAIN_ID = 31337
@@ -31,8 +32,9 @@ const CIRCUIT_VERSION = "0.23.0"
 const WAIT = { timeout: 3600, interval: 1 } as const
 
 /**
- * Deploy ZKPassport's registry on a local network where `verify_zkpassport_proof` finds it, unless
- * it is there already, with the network's test accounts as admin and operator. Seed it with what
+ * Deploy ZKPassport's registry, as `scripts/fetch-zkpassport.sh` compiles it at the contracts'
+ * zkpassport-packages tag, on a local network where `verify_zkpassport_proof` finds it, unless it is
+ * there already, with the network's test accounts as admin and operator. Seed it with what
  * the credentials contracts check against Sepolia, the registries dev-mode proofs use: the latest
  * certificate root, the circuit root of circuits 0.23.0 and their `outer_count_5` vk. Then warp
  * time past the registry's delay so the values are live.
@@ -44,15 +46,26 @@ export async function setUpLocalNetworkRegistry(
   admin: AztecAddress,
   operator: AztecAddress,
 ): Promise<AztecAddress> {
+  const registryArtifact = loadContractArtifact(
+    JSON.parse(
+      readFileSync(
+        new URL(
+          "../../zkpassport/target/zkpassport_registry_contract-ZKPassportRegistry.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as NoirCompiledContract,
+  )
   const constructorArgs = [admin, operator, MODE_VALID_WITHIN_WINDOW, VALIDITY_WINDOW]
-  const instance = await getContractInstanceFromInstantiationParams(ZKPassportRegistryArtifact, {
+  const instance = await getContractInstanceFromInstantiationParams(registryArtifact, {
     constructorArgs,
     salt: LOCAL_NETWORK_REGISTRY_SALT,
     deployer: AztecAddress.ZERO,
   })
   const deployed = await node.getContract(instance.address)
   if (deployed) {
-    await registerZKPassportRegistry(wallet, node, deployed.address)
+    await wallet.registerContract(deployed, registryArtifact)
     console.log(`Local network registry: ${instance.address}`)
     return instance.address
   }
@@ -60,7 +73,7 @@ export async function setUpLocalNetworkRegistry(
   console.log("Deploying and seeding the local network registry from Sepolia's registries...")
   const { contract: registry } = await Contract.deploy(
     wallet,
-    ZKPassportRegistryArtifact,
+    registryArtifact,
     constructorArgs,
     "constructor",
     {

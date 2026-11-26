@@ -76,11 +76,12 @@ AZTEC_NODE_URL=http://localhost:8080 npm run server
 npm start
 ```
 
-On first start it deploys ZKPassport's registry where `verify_zkpassport_proof` looks for it on a
-local network, with the network's test accounts as admin and operator. It seeds it with Sepolia's
-latest certificate root, the circuit root of circuits 0.23.0 and their `outer_count_5` vk, and warps
-the network's time past the registry's 24-hour delay. The relayer then sends from a test account,
-paying with its Fee Juice.
+On first start it deploys ZKPassport's registry from `zkpassport/target/` (see
+`scripts/fetch-zkpassport.sh` above), where `verify_zkpassport_proof` looks for it on a local
+network, with the network's test accounts as admin and operator. It seeds it with Sepolia's latest
+certificate root, the circuit root of circuits 0.23.0 and their `outer_count_5` vk, and warps the
+network's time past the registry's 24-hour delay. The relayer then sends from a test account, paying
+with its Fee Juice.
 
 A proof binds the network it is verified on, and a ZKPassport request can only name Aztec mainnet or
 testnet, so the ZKPassport app can't make a proof the credentials contracts on a local network

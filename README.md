@@ -52,7 +52,8 @@ eval "$(aztec-up env)"
 ```
 
 The tests deploy the registry from `zkpassport/target/`, with
-`deploy_local_network_registry(&mut env, "zkpassport@zkpassport_registry_contract/ZKPassportRegistry")`.
+`deploy_local_network_registry(&mut env, "zkpassport@zkpassport_registry_contract/ZKPassportRegistry")`,
+and the e2e and the app's relayer deploy it from there on a local network.
 `scripts/fetch-zkpassport.sh` puts the registry artifact there and the age proof fixture the e2e
 uses in `zkpassport/fixtures/`. It takes both from the zkpassport-packages ref the contracts depend
 on, and compiles the registry with the toolchain in `.aztecrc`.
