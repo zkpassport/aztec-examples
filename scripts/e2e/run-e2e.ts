@@ -1,10 +1,9 @@
 /**
  * Deploys the local network registry (the ZKPassportRegistry that verify_zkpassport_proof
- * finds on a local network) + AgeGate to a local Aztec network, seeds the
- * certificate/circuit roots and the accepted VK hash, warps chain time past the
- * registry's 24h DelayedPublicMutable delay, and then executes a real private
- * `claim()` transaction whose proof is produced by the local PXE's client-IVC
- * prover.
+ * finds on a local network) + ZKPassportCredentials with an 18+ policy to a local Aztec
+ * network, seeds the certificate/circuit roots and the accepted VK hash, warps chain time past
+ * the registry's 24h DelayedPublicMutable delay, and then executes a real private
+ * `claim_age()` transaction whose proof is produced by the local PXE's client-IVC prover.
  *
  * Three outcomes are asserted:
  *   CLAIM MINED           — the real proof verifies and the tx lands
@@ -29,7 +28,7 @@ import {
   ZKPassportRegistryArtifact,
 } from "@zkpassport/aztec"
 import { circuitVersionToBytes32 } from "@zkpassport/utils"
-import { AgeGateContract } from "../artifacts/AgeGate.js"
+import { ZKPassportCredentialsContract } from "../artifacts/ZKPassportCredentials.js"
 
 const NODE_URL = process.env.AZTEC_NODE_URL ?? "http://localhost:8080"
 
@@ -55,7 +54,13 @@ const VALIDITY_WINDOW = 86400n
 // Client-IVC proving is minutes-scale; never let the tx wait time out first.
 const WAIT = { timeout: 3600, interval: 1 } as const
 
-// AgeGate's domain, scope_hash("example.com"): the domain the age fixture was made for.
+// The 18+ policy the e2e creates, one claim per passport: ZKPassportCredentials' AGE_MIN
+// requirement, and the policy's id
+const AGE_MIN = 1
+const ADULTS = 1n
+
+// The credentials contract's domain, scope_hash("example.com"): the domain the age fixture was
+// made for.
 const FIXTURE_DOMAIN = Fr.fromHexString(
   `0x${createHash("sha256").update("example.com").digest().subarray(0, 31).toString("hex")}`,
 )
@@ -124,7 +129,7 @@ async function main() {
   log(`accounts admin=${admin} operator=${operator} user=${user}`)
 
   // ---- 1. Deploy -----------------------------------------------------------
-  // The registry from @zkpassport/aztec, the same contract class as the registry the gates'
+  // The registry from @zkpassport/aztec, the same contract class as the registry the contracts'
   // zkpassport-packages dependency deploys in TXE
   const [{ contract: registry }] = await timed("deploy registry", () =>
     Contract.deploy(
@@ -137,10 +142,18 @@ async function main() {
   )
   log(`registry at ${registry.address}`)
 
-  const [{ contract: ageGate }] = await timed("deploy age gate", () =>
-    AgeGateContract.deploy(wallet, FIXTURE_DOMAIN, false, true).send({ from: admin, wait: WAIT }),
+  const [{ contract: credentials }] = await timed("deploy credentials", () =>
+    ZKPassportCredentialsContract.deploy(wallet, FIXTURE_DOMAIN, false).send({
+      from: admin,
+      wait: WAIT,
+    }),
   )
-  log(`age gate at ${ageGate.address}`)
+  log(`credentials at ${credentials.address}`)
+  await timed("create the 18+ policy", () =>
+    credentials.methods
+      .create_policy(ADULTS, { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] }, true)
+      .send({ from: admin, wait: WAIT }),
+  )
 
   // ---- 2. Seed roots (operator) and the accepted VK (admin) -------------------
   // valid_from slightly before the proof's current_date so the root is live for it.
@@ -175,7 +188,7 @@ async function main() {
   // absolutely: past the DPM delay (counted from the seeding just above) AND into the proof's
   // freshness window (zkpassport_aztec_verifier::verify::verify_zkpassport_proof requires
   //   current_date <= anchor_ts + 3600   AND   current_date + 604800 > anchor_ts,
-  // 604800s = 7 days, the validity period of AgeGate's ServiceConfig).
+  // 604800s = 7 days, the validity period of the credentials contract's ServiceConfig).
   const before = await l2Timestamp(node)
   const target = BigInt(FIXTURE.nowTimestamp) + DELAY + 120n
   const bump = target > before ? target - before : DELAY + 120n
@@ -208,10 +221,10 @@ async function main() {
 
   // The capsule is scoped to `user` — the sandbox account sending the transaction. The claim
   // itself goes to the fixture's bound address: the proof carries a bind commitment over it,
-  // so the sender is effectively a relayer and the badge recipient needs no account here.
+  // so the sender is effectively a relayer and the credential's holder needs no account here.
   const boundUser = AztecAddress.fromFieldUnsafe(Fr.fromHexString(FIXTURE.bindAddress))
   const capsule = (fields: Fr[]) =>
-    new Capsule(ageGate.address, new Fr(PROOF_CAPSULE_SLOT), fields, user as AztecAddress)
+    new Capsule(credentials.address, new Fr(PROOF_CAPSULE_SLOT), fields, user as AztecAddress)
 
   // ---- 4a. Tampered proof must fail ----------------------------------------------
   // Flip one bit inside the proof body; vk and public inputs stay valid so every
@@ -237,8 +250,8 @@ async function main() {
     )
 
     try {
-      const { receipt: bad } = await ageGate.methods
-        .claim(boundUser)
+      const { receipt: bad } = await credentials.methods
+        .claim_age(boundUser, ADULTS)
         .send({ from: user, capsules: [capsule(tampered)], wait: WAIT })
 
       tamperFailed = false
@@ -265,18 +278,20 @@ async function main() {
 
   // ---- 4b. The real claim --------------------------------------------------
   const [{ receipt }, claimSecs] = await timed("claim (private tx, client-IVC proving)", () =>
-    ageGate.methods.claim(boundUser).send({ from: user, capsules: [capsule(blob)], wait: WAIT }),
+    credentials.methods
+      .claim_age(boundUser, ADULTS)
+      .send({ from: user, capsules: [capsule(blob)], wait: WAIT }),
   )
   console.log(`CLAIM MINED: ${receipt.txHash.toString()}`)
-  // The badge is a private note owned by the fixture's bound address, which has no keys in this
-  // wallet, so the e2e can't read it. The TXE tests check who holds it.
+  // The credential is a private note owned by the fixture's bound address, which has no keys in
+  // this wallet, so the e2e can't read it. The TXE tests check who holds it.
 
   // ---- 5. Double claim must collide on the uniqueness nullifier -------------
   let doubleFailed = false
   let doubleError = ""
   try {
-    await ageGate.methods
-      .claim(boundUser)
+    await credentials.methods
+      .claim_age(boundUser, ADULTS)
       .send({ from: user, capsules: [capsule(blob)], wait: WAIT })
   } catch (e) {
     doubleFailed = true

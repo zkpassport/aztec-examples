@@ -8,7 +8,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-manifest=$root/contracts/age_gate_contract/Nargo.toml
+manifest=$root/contracts/zkpassport_credentials_contract/Nargo.toml
 ref=$(sed -nE 's|^zkpassport_registry_contract = \{ git = "[^"]+", tag = "([^"]+)".*|\1|p' "$manifest")
 if [ -z "$ref" ]; then
   echo "No zkpassport_registry_contract git tag in $manifest" >&2

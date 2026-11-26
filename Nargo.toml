@@ -1,7 +1,5 @@
 [workspace]
 members = [
-    "contracts/age_gate_contract",
     "contracts/fortuna_market_contract",
-    "contracts/nationality_gate_contract",
-    "contracts/sanctions_gate_contract",
+    "contracts/zkpassport_credentials_contract",
 ]

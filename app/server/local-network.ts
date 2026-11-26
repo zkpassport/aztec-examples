@@ -33,9 +33,9 @@ const WAIT = { timeout: 3600, interval: 1 } as const
 /**
  * Deploy ZKPassport's registry on a local network where `verify_zkpassport_proof` finds it, unless
  * it is there already, with the network's test accounts as admin and operator. Seed it with what
- * the gates check against Sepolia, the registries dev-mode proofs use: the latest certificate root,
- * the circuit root of circuits 0.23.0 and their `outer_count_5` vk. Then warp time past the
- * registry's delay so the values are live.
+ * the credentials contracts check against Sepolia, the registries dev-mode proofs use: the latest
+ * certificate root, the circuit root of circuits 0.23.0 and their `outer_count_5` vk. Then warp
+ * time past the registry's delay so the values are live.
  */
 export async function setUpLocalNetworkRegistry(
   node: ReturnType<typeof createAztecNodeClient>,

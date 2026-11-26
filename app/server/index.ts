@@ -21,12 +21,13 @@ createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", "http://localhost")
     if (request.method === "GET" && url.pathname === "/api/network") {
-      // The page's wallet reads its badge note itself: it needs the node, the gates and the
-      // relayer's account, which tags the notes it sends
+      // The page's wallet reads its credential note itself: it needs the node, the credentials
+      // contracts, the policy and the relayer's account, which tags the notes it sends
       return send(response, 200, {
         nodeUrl: NODE_URL,
-        gates: relayer.gateAddresses(),
+        credentials: relayer.credentialsAddresses(),
         markets: relayer.marketAddresses(),
+        policyId: relayer.policyId,
         relayer: relayer.address(),
         sourceChain: relayer.sourceChain,
         network: relayer.network ?? null,
@@ -59,7 +60,7 @@ createServer(async (request, response) => {
 function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   if (message.includes("Nullifier collision")) {
-    return "this passport has already claimed a badge on Fortuna"
+    return "this passport has already claimed its credential on Fortuna"
   }
   return message.match(/Assertion failed: ([^'\n]+)/)?.[1]?.trim() ?? message
 }

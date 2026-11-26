@@ -1,19 +1,26 @@
-import type { AztecNetwork } from "@zkpassport/sdk"
-import QRCode from "qrcode"
+import type { AztecNetwork, ProofResult } from "@zkpassport/sdk"
+import { VerifyWithZKPassport } from "@zkpassport/ui/react"
+import { getIdFromChain } from "@zkpassport/utils"
 import { useCallback, useEffect, useState } from "react"
 import { shortAddress } from "./account"
 import { MARKETS, type Market } from "./markets"
-import { requestAgeProof } from "./verify"
 import { FortunaWallet, type GateMode } from "./wallet"
 
-type Flow =
-  | { step: "idle" }
-  | { step: "scan"; url: string; qr: string }
-  | { step: "received" }
-  | { step: "proving" }
-  | { step: "submitting" }
-  | { step: "done"; txHash: string }
-  | { step: "failed"; message: string }
+type Side = "YES" | "NO"
+
+/** The result of the latest order on a market card */
+type OrderState =
+  | { status: "placing"; side: Side }
+  | { status: "placed"; side: Side; txHash: string }
+  | { status: "refused"; side: Side; message: string }
+
+type Claim =
+  | { status: "idle" }
+  | { status: "claiming" }
+  | { status: "claimed"; txHash: string }
+  | { status: "failed"; message: string }
+
+type Counts = Record<number, { yes: number; no: number }>
 
 export function App() {
   const [wallet, setWallet] = useState<FortunaWallet | undefined>()
@@ -21,40 +28,29 @@ export function App() {
   const [mode, setMode] = useState<GateMode>("dev")
   const [sourceChain, setSourceChain] = useState<string | undefined>()
   const [network, setNetwork] = useState<AztecNetwork | null>(null)
-  const [badge, setBadge] = useState<boolean | undefined>()
-  const [flow, setFlow] = useState<Flow>({ step: "idle" })
-  const [order, setOrder] = useState<Order | undefined>()
+  const [credential, setCredential] = useState<boolean | undefined>()
+  const [claim, setClaim] = useState<Claim>({ status: "idle" })
+  const [orders, setOrders] = useState<Record<number, OrderState>>({})
+  const [counts, setCounts] = useState<Counts>({})
 
   const account = wallet?.address.toString()
 
-  async function trade(marketIndex: number, side: "YES" | "NO") {
+  const refreshCredential = useCallback(async () => {
     if (!wallet) {
       return
     }
-    const what = `${side} on “${MARKETS[marketIndex].question}”`
-    setOrder({ status: "placing", what })
-    try {
-      // Market ids on chain start at 1
-      const txHash = await wallet.placeOrder(mode, marketIndex + 1, side === "YES")
-      setOrder({ status: "placed", what, txHash })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      setOrder({
-        status: "refused",
-        what,
-        message: message.includes("no badge")
-          ? "Fortuna's market contract refused it: this account doesn't hold the 18+ badge. Verify your age to trade."
-          : message,
-      })
-    }
-  }
+    setCredential(undefined)
+    setCredential(await wallet.hasCredential(mode))
+  }, [wallet, mode])
 
-  const refreshBadge = useCallback(async () => {
+  const refreshCounts = useCallback(async () => {
     if (!wallet) {
       return
     }
-    setBadge(undefined)
-    setBadge(await wallet.hasBadge(mode))
+    const entries = await Promise.all(
+      MARKETS.map(async (_, index) => [index, await wallet.orderCounts(mode, index + 1)] as const),
+    )
+    setCounts(Object.fromEntries(entries))
   }, [wallet, mode])
 
   useEffect(() => {
@@ -63,8 +59,9 @@ export function App() {
       .then(
         async (body: {
           nodeUrl: string
-          gates: Record<GateMode, string>
+          credentials: Record<GateMode, string>
           markets: Record<GateMode, string>
+          policyId: number
           relayer: string
           sourceChain: string
           network: AztecNetwork | null
@@ -80,56 +77,64 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    refreshBadge().catch(() => setBadge(false))
-  }, [refreshBadge])
+    refreshCredential().catch(() => setCredential(false))
+    refreshCounts().catch(() => setCounts({}))
+    setOrders({})
+    setClaim({ status: "idle" })
+  }, [refreshCredential, refreshCounts])
 
-  async function verify() {
-    setFlow({ step: "idle" })
-    if (!account) {
+  async function trade(marketIndex: number, side: Side) {
+    if (!wallet) {
       return
     }
-    if (!network) {
-      setFlow({
-        step: "failed",
-        message:
-          "A ZKPassport proof can only be bound to Aztec mainnet or testnet, not this network.",
+    setOrders((current) => ({ ...current, [marketIndex]: { status: "placing", side } }))
+    try {
+      // Market ids on chain start at 1
+      const txHash = await wallet.placeOrder(mode, marketIndex + 1, side === "YES")
+      setOrders((current) => ({ ...current, [marketIndex]: { status: "placed", side, txHash } }))
+      await refreshCounts()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setOrders((current) => ({
+        ...current,
+        [marketIndex]: {
+          status: "refused",
+          side,
+          message: message.includes("no credential")
+            ? "The market contract refused it: this account has no 18+ credential."
+            : message,
+        },
+      }))
+    }
+  }
+
+  // The hosted flow hands back the proofs; the relayer proves the claim with the outer one
+  async function claimCredential(proofs: ProofResult[]): Promise<boolean> {
+    const proof = proofs.find((candidate) => candidate.name?.startsWith("outer_count_"))
+    if (!proof) {
+      setClaim({
+        status: "failed",
+        message: "ZKPassport sent no proof an Aztec contract verifies.",
       })
-      return
+      return false
     }
-    // The proof must use the registries the network's ZKPassport registry mirrors; Sepolia's need
-    // the SDK's dev mode. The gate decides whether mock passports are accepted.
-    await requestAgeProof(account, network, sourceChain === "ethereum_sepolia", async (event) => {
-      if (event.kind === "url") {
-        setFlow({
-          step: "scan",
-          url: event.url,
-          qr: await QRCode.toDataURL(event.url, { margin: 1, width: 240 }),
-        })
-      } else if (event.kind === "received" || event.kind === "proving") {
-        setFlow({ step: event.kind })
-      } else if (event.kind === "rejected") {
-        setFlow({ step: "failed", message: "The request was declined in the ZKPassport app." })
-      } else if (event.kind === "error") {
-        setFlow({ step: "failed", message: event.message })
-      } else if (event.kind === "proof") {
-        setFlow({ step: "submitting" })
-        const response = await fetch("/api/claim", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode, user: account, proof: event.proof }),
-        })
-        const body = (await response.json()) as { txHash?: string; error?: string }
-        if (body.txHash) {
-          setFlow({ step: "done", txHash: body.txHash })
-          await refreshBadge()
-        } else {
-          setFlow({
-            step: "failed",
-            message: body.error ?? `the relayer answered ${response.status}`,
-          })
-        }
-      }
+    setClaim({ status: "claiming" })
+    const response = await fetch("/api/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, user: account, proof }),
     })
+    const body = (await response.json()) as { txHash?: string; error?: string }
+    if (!body.txHash) {
+      setClaim({
+        status: "failed",
+        message: body.error ?? `the relayer answered ${response.status}`,
+      })
+      return false
+    }
+    setClaim({ status: "claimed", txHash: body.txHash })
+    await refreshCredential()
+    return true
   }
 
   return (
@@ -142,140 +147,195 @@ export function App() {
             <div className="brand-tagline">Private prediction markets on Aztec</div>
           </div>
         </div>
-        <AccountBox account={account} badge={badge} error={walletError} />
+        <AccountChip account={account} credential={credential} error={walletError} />
       </header>
 
       <main className="main">
         <section className="markets">
-          <h1>Markets</h1>
-          {badge === false && (
-            <p className="locked-hint">
-              Orders need Fortuna's 18+ badge, which the market contract checks. Verify that you're
-              18 or older to trade.
-            </p>
-          )}
+          <div className="markets-heading">
+            <h1>Markets</h1>
+            {credential === false && (
+              <p className="locked-hint">
+                Orders need the 18+ credential, which the market checks.
+              </p>
+            )}
+          </div>
           <div className="market-list">
             {MARKETS.map((market, index) => (
               <MarketCard
                 key={market.id}
                 market={market}
-                disabled={!wallet || order?.status === "placing"}
+                counts={counts[index]}
+                order={orders[index]}
+                disabled={!wallet || orders[index]?.status === "placing"}
                 onTrade={(side) => trade(index, side)}
               />
             ))}
           </div>
-          {order && <OrderStatus order={order} onDismiss={() => setOrder(undefined)} />}
         </section>
 
         <aside className="gate">
-          {badge ? (
+          {credential ? (
             <div className="panel verified">
-              <h2>You're verified</h2>
+              <div className="panel-kicker">Verified</div>
+              <h2>You hold the 18+ credential</h2>
               <p>
-                Your Aztec account holds Fortuna's 18+ badge. Fortuna learned that you are over 18,
-                and nothing else about you.
+                A private note in this browser's Aztec account. Fortuna learned that you're over 18
+                and nothing else.
               </p>
+              {claim.status === "claimed" && (
+                <p className="mono">Claimed in {shortHash(claim.txHash)}</p>
+              )}
             </div>
           ) : (
             <div className="panel">
-              <h2>18+ only</h2>
+              <div className="panel-kicker">18+ only</div>
+              <h2>Prove your age to trade</h2>
               <p>
-                Trading on Fortuna requires being 18 or older. Prove it with ZKPassport: your phone
-                reads your passport and proves your age without revealing your name, birth date or
-                document.
+                Your phone reads your passport and proves you're 18 or older, without revealing your
+                name, birth date or document.
               </p>
-              <label className="dev-mode">
+              <label className="dev-mode" htmlFor="dev-mode">
                 <input
+                  id="dev-mode"
                   type="checkbox"
                   checked={mode === "dev"}
                   onChange={(event) => setMode(event.target.checked ? "dev" : "live")}
                 />
-                Developer mode: also accept ZKPassport's mock passports
+                <span>
+                  <strong>Developer mode</strong>
+                  <br />
+                  Also accept ZKPassport's mock passports
+                </span>
               </label>
-              {account ? (
-                <VerifyFlow flow={flow} onStart={verify} />
-              ) : (
-                <Status text="Setting up your Aztec account in this browser…" />
-              )}
+              <GateAction
+                account={account}
+                network={network}
+                claim={claim}
+                verifier={
+                  account && network ? (
+                    <VerifyWithZKPassport
+                      purpose="Prove you're 18 or older to trade on Fortuna"
+                      query={{ age: { min: 18 } }}
+                      bind={{ account: account as `0x${string}`, chainId: getIdFromChain(network) }}
+                      mode="compressed"
+                      // Sepolia's registries, which the testnet's ZKPassport registry mirrors, take
+                      // the SDK's dev mode; the credentials contract decides whether mock passports
+                      // are accepted
+                      service={{
+                        devMode: sourceChain === "ethereum_sepolia",
+                        uniqueIdentifierType: "non-salted",
+                      }}
+                      style={{ label: "Verify my age" }}
+                      onSuccess={({ proofs }) => claimCredential(proofs)}
+                      onError={(error) => setClaim({ status: "failed", message: error.message })}
+                    />
+                  ) : undefined
+                }
+              />
             </div>
           )}
         </aside>
       </main>
 
       <footer className="footer">
-        A demo of ZKPassport on Aztec. Proofs are verified by an Aztec contract, and the badge is a
-        private note that only this browser's account can see; the passport data behind it never
-        leaves your phone.
+        A demo of ZKPassport on Aztec. An Aztec contract verifies the proof, the credential is a
+        private note only this browser's account can see, and the passport data behind it never
+        leaves your phone. No funds move.
       </footer>
     </div>
   )
 }
 
-function AccountBox(props: {
+function GateAction(props: {
   account: string | undefined
-  badge: boolean | undefined
-  error: string | undefined
+  network: AztecNetwork | null
+  claim: Claim
+  verifier: React.ReactNode
 }) {
-  if (props.error) {
-    return <div className="account">Couldn't set up your Aztec account: {props.error}</div>
-  }
   if (!props.account) {
-    return <div className="account">Setting up your Aztec account…</div>
+    return <Status text="Setting up your Aztec account in this browser…" />
+  }
+  if (!props.network) {
+    return (
+      <p className="notice">
+        A ZKPassport proof can only be bound to Aztec mainnet or testnet, so it can't be requested
+        on this network.
+      </p>
+    )
   }
   return (
-    <div className="account">
-      <span
-        className={`badge-dot ${props.badge ? "on" : ""}`}
-        title={props.badge ? "18+ verified" : "Not verified"}
-      />
-      <code title={props.account}>{shortAddress(props.account)}</code>
+    <div className="gate-action">
+      {props.verifier}
+      {props.claim.status === "claiming" && (
+        <Status text="Fortuna's relayer is claiming your credential on Aztec…" />
+      )}
+      {props.claim.status === "failed" && (
+        <p className="notice refused">Couldn't claim the credential: {props.claim.message}</p>
+      )}
     </div>
   )
 }
 
-type Order =
-  | { status: "placing"; what: string }
-  | { status: "placed"; what: string; txHash: string }
-  | { status: "refused"; what: string; message: string }
-
-function OrderStatus(props: { order: Order; onDismiss: () => void }) {
-  const { order } = props
-  switch (order.status) {
-    case "placing":
-      return (
-        <div className="toast" role="status">
-          <span className="spinner" aria-hidden="true" />
-          Proving your order in this browser: {order.what}…
-        </div>
-      )
-    case "placed":
-      return (
-        <div className="toast" role="status" onClick={props.onDismiss}>
-          Order placed: {order.what}, in transaction {order.txHash.slice(0, 10)}…. This is a demo;
-          no funds move.
-        </div>
-      )
-    case "refused":
-      return (
-        <div className="toast refused" role="alert" onClick={props.onDismiss}>
-          Order refused: {order.what}. {order.message}
-        </div>
-      )
+function AccountChip(props: {
+  account: string | undefined
+  credential: boolean | undefined
+  error: string | undefined
+}) {
+  const [copied, setCopied] = useState(false)
+  if (props.error) {
+    return <div className="notice refused">Couldn't set up your Aztec account: {props.error}</div>
   }
+  if (!props.account) {
+    return <Status text="Setting up your Aztec account…" />
+  }
+  const account = props.account
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(account)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+  return (
+    <div className="account">
+      <span
+        className={`pill ${props.credential ? "pill-verified" : ""}`}
+        title={props.credential === undefined ? "Checking your notes" : undefined}
+      >
+        {props.credential === undefined
+          ? "Checking…"
+          : props.credential
+            ? "18+ verified"
+            : "Not verified"}
+      </span>
+      <button type="button" className="address" title={account} onClick={copy}>
+        <code>{shortAddress(account)}</code>
+        <span className="address-action">{copied ? "Copied" : "Copy"}</span>
+      </button>
+    </div>
+  )
 }
 
 function MarketCard(props: {
   market: Market
+  counts: { yes: number; no: number } | undefined
+  order: OrderState | undefined
   disabled: boolean
-  onTrade: (side: "YES" | "NO") => void
+  onTrade: (side: Side) => void
 }) {
-  const { market } = props
+  const { market, counts, order } = props
   return (
     <article className="market">
       <div className="market-category">{market.category}</div>
       <h3>{market.question}</h3>
       <div className="market-meta">
-        {market.volume} volume · closes {market.closes}
+        <span>Closes {market.closes}</span>
+        <span className="mono" title="Orders the market contract has counted">
+          {counts ? `${counts.yes} yes · ${counts.no} no on chain` : "…"}
+        </span>
       </div>
       <div className="market-actions">
         <button
@@ -295,46 +355,27 @@ function MarketCard(props: {
           No {100 - market.yes}¢
         </button>
       </div>
+      <div className="order-slot">{order && <OrderLine order={order} />}</div>
     </article>
   )
 }
 
-function VerifyFlow(props: { flow: Flow; onStart: () => void }) {
-  const { flow } = props
-  switch (flow.step) {
-    case "idle":
+function OrderLine(props: { order: OrderState }) {
+  const { order } = props
+  switch (order.status) {
+    case "placing":
+      return <Status text={`Proving your ${order.side} order in this browser…`} />
+    case "placed":
       return (
-        <button type="button" className="primary" onClick={props.onStart}>
-          Verify my age with ZKPassport
-        </button>
+        <p className="order-line placed" role="status">
+          {order.side} order placed · <span className="mono">{shortHash(order.txHash)}</span>
+        </p>
       )
-    case "scan":
+    case "refused":
       return (
-        <div className="scan">
-          <img src={flow.qr} alt="ZKPassport request QR code" width={240} height={240} />
-          <p>
-            Scan with the ZKPassport app, or <a href={flow.url}>open the request</a> on this device.
-          </p>
-        </div>
-      )
-    case "received":
-      return <Status text="Request received on your phone. Confirm it in the ZKPassport app." />
-    case "proving":
-      return <Status text="Your phone is generating the proof…" />
-    case "submitting":
-      return (
-        <Status text="Proof received. Fortuna's relayer is proving the claim and sending it to Aztec…" />
-      )
-    case "done":
-      return <Status text={`Badge granted in transaction ${flow.txHash.slice(0, 10)}…`} />
-    case "failed":
-      return (
-        <div className="failed">
-          <p>Verification failed: {flow.message}</p>
-          <button type="button" className="primary" onClick={props.onStart}>
-            Try again
-          </button>
-        </div>
+        <p className="order-line refused" role="alert">
+          {order.side} order refused. {order.message}
+        </p>
       )
   }
 }
@@ -346,4 +387,8 @@ function Status(props: { text: string }) {
       {props.text}
     </p>
   )
+}
+
+function shortHash(hash: string): string {
+  return `${hash.slice(0, 10)}…`
 }
