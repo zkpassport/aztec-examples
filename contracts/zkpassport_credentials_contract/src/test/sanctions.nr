@@ -31,7 +31,7 @@ unconstrained fn claim(
 ) {
     deployment.deliver(
         sender,
-        bound_to(user, blob_with(sanctions_commitment(proven_root, false))),
+        bound_to(user, blob_with(sanctions_commitment(proven_root, true))),
         Option::none(),
         sanctions_root,
     );
@@ -143,10 +143,7 @@ unconstrained fn claim_for_unbound_address_fails() {
 
     deployment.deliver(
         thief,
-        bound_to(
-            owner,
-            blob_with(sanctions_commitment(SANCTIONS_ROOT, false)),
-        ),
+        bound_to(owner, blob_with(sanctions_commitment(SANCTIONS_ROOT, true))),
         Option::none(),
         Option::some(SANCTIONS_ROOT),
     );
