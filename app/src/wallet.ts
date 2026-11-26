@@ -26,7 +26,7 @@ const WAIT = { timeout: 600, interval: 2 } as const
 
 /**
  * The Aztec account this browser trades as, with a wallet that holds its keys. The credentials
- * contract mints the 18+ credential as a private note to the account, so only this wallet can see
+ * contract mints the trader credential as a private note to the account, so only this wallet can see
  * it, and only this wallet can prove the account holds it when it places an order.
  */
 export class FortunaWallet {
@@ -97,7 +97,7 @@ export class FortunaWallet {
     return new FortunaWallet(credentials, markets, network.policyId, fee, account.address)
   }
 
-  /** Whether this account holds the `mode` contract's 18+ credential, from its own notes */
+  /** Whether this account holds the `mode` contract's trader credential, from its own notes */
   async hasCredential(mode: GateMode): Promise<boolean> {
     const { result } = await this.credentials[mode].methods
       .has_credential(this.address, this.policyId)
@@ -119,7 +119,7 @@ export class FortunaWallet {
 
   /**
    * Proves and sends an order on `market` of the `mode` market. The market's contract refuses it
-   * with "no credential" unless this account holds the 18+ credential.
+   * with "no credential" unless this account holds the trader credential.
    */
   async placeOrder(mode: GateMode, market: number, yes: boolean): Promise<string> {
     const { receipt } = await this.markets[mode].methods

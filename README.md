@@ -3,28 +3,30 @@
 Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec library in
 [zkpassport-packages](https://github.com/zkpassport/zkpassport-packages/tree/main/packages/aztec).
 
-| Contract                                    | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contracts/zkpassport_credentials_contract` | Private ZKPassport credentials. The deployer sets the domain its requests come from and whether it also accepts ZKPassport's mock passports, and creates policies with `create_policy`. A policy is a requirement (a minimum age, a nationality, or not being on the sanctions lists), whether each passport claims its credential once (a uniqueness nullifier per policy) or can claim it again, as in testing, and optionally 64 bytes of custom data the proof must be bound to, such as the SHA-256 digest of terms the user accepts. |
-| `contracts/fortuna_market_contract`         | Fortuna's market. `place_order` calls the credentials contract's `assert_has_credential` for the sender and the market's policy, so only an account whose wallet holds that credential note can trade.                                                                                                                                                                                                                                                                                                                                     |
+| Contract                                    | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `contracts/zkpassport_credentials_contract` | Private ZKPassport credentials. The deployer sets the domain its requests come from and whether it also accepts ZKPassport's mock passports, and creates policies with `create_policy`. A policy is a requirement (a minimum age, not being on the sanctions lists, both, or a nationality), whether each passport claims its credential once (a uniqueness nullifier per policy) or can claim it again, as in testing, and optionally 64 bytes of custom data the proof must be bound to, such as the SHA-256 digest of terms the user accepts. |
+| `contracts/fortuna_market_contract`         | Fortuna's market. `place_order` calls the credentials contract's `assert_has_credential` for the sender and the market's policy, so only an account whose wallet holds that credential note can trade.                                                                                                                                                                                                                                                                                                                                           |
 
-A user claims a policy's credential with `claim_age`, `claim_nationality` or `claim_sanctions`,
-which verify a proof bound to the user on the contract's network and mint the user a private
-credential note of that policy. Since the proof is bound to the user, anyone may submit the
-transaction, and nothing public names the user. Other contracts check the note with
-`assert_has_credential(user, policy_id)`, and the holder's wallet reads it with `has_credential`.
+A user claims a policy's credential with `claim_age`, `claim_sanctions`, `claim_age_and_sanctions`
+or `claim_nationality`, one per combination of checks, which verify a proof bound to the user on the
+contract's network and mint the user a private credential note of that policy. Since the proof is
+bound to the user, anyone may submit the transaction, and nothing public names the user. Other
+contracts check the note with `assert_has_credential(user, policy_id)`, and the holder's wallet
+reads it with `has_credential`.
 
 A policy with custom data only issues its credential for a proof bound to that data as well as to
 the user: the ZKPassport request binds it as `custom_data`, byte for byte.
 
 `claim_nationality` reads the nationality from the proof's disclosed bytes, which ride in the
-disclose capsule. For `claim_sanctions`, the client asks the ZKPassport SDK for `.sanctions()` and
-the bind, and stashes the sanctions root the proof was screened against, the proof result's
-`committedInputs.exclusion_check_sanctions.rootHash`, in the sanctions capsule
-(`SANCTIONS_CAPSULE_SLOT`, 3) next to the proof capsule.
+disclose capsule. For `claim_sanctions` and `claim_age_and_sanctions`, the client asks the
+ZKPassport SDK for `.sanctions()` and the bind, and stashes the sanctions root the proof was
+screened against, the proof result's `committedInputs.exclusion_check_sanctions.rootHash`, in the
+sanctions capsule (`SANCTIONS_CAPSULE_SLOT`, 3) next to the proof capsule.
 
-[`app/`](app/README.md) is Fortuna, an 18+ prediction market on the Aztec testnet that uses an 18+
-credential with proofs from the ZKPassport app.
+[`app/`](app/README.md) is Fortuna, a prediction market on the Aztec testnet for traders who are 18
+or older and not on a sanctions list, with one credential from one proof of both, made by the
+ZKPassport app.
 
 ## Depending on the library
 

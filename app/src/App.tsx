@@ -114,7 +114,7 @@ export function App() {
           status: "refused",
           side,
           message: message.includes("no credential")
-            ? "The market contract refused it: this account has no 18+ credential."
+            ? "The market contract refused it: this account has no trader credential."
             : message,
         },
       }))
@@ -169,7 +169,7 @@ export function App() {
             <h1>Markets</h1>
             {credential === false && (
               <p className="locked-hint">
-                Orders need the 18+ credential, which the market checks.
+                Orders need the trader credential, which the market checks.
               </p>
             )}
           </div>
@@ -191,10 +191,10 @@ export function App() {
           {credential ? (
             <div className="panel verified">
               <div className="panel-kicker">Verified</div>
-              <h2>You hold the 18+ credential</h2>
+              <h2>You hold the trader credential</h2>
               <p>
                 A private note in this browser's Aztec account. Fortuna learned that you're over 18
-                and nothing else.
+                and not on a sanctions list, and nothing else.
               </p>
               {claim.status === "claimed" && (
                 <p className="mono">Claimed in {shortHash(claim.txHash)}</p>
@@ -202,11 +202,11 @@ export function App() {
             </div>
           ) : (
             <div className="panel">
-              <div className="panel-kicker">18+ only</div>
-              <h2>Prove your age to trade</h2>
+              <div className="panel-kicker">Verified traders only</div>
+              <h2>Verify to trade</h2>
               <p>
-                Your phone reads your passport and proves you're 18 or older, without revealing your
-                name, birth date or document.
+                Your phone reads your passport and proves you're 18 or older and not on a sanctions
+                list, without revealing your name, birth date or document.
               </p>
               <label className="dev-mode" htmlFor="dev-mode">
                 <input
@@ -238,8 +238,8 @@ export function App() {
                 verifier={
                   account && network && digest ? (
                     <VerifyWithZKPassport
-                      purpose="Prove you're 18 or older to trade on Fortuna"
-                      query={{ age: { min: 18 } }}
+                      purpose="Prove you're 18 or older and not on a sanctions list to trade on Fortuna"
+                      query={{ age: { min: 18 }, sanctions: true }}
                       bind={{
                         account: account as `0x${string}`,
                         chainId: getIdFromChain(network),
@@ -253,7 +253,7 @@ export function App() {
                         devMode: sourceChain === "ethereum_sepolia",
                         uniqueIdentifierType: "non-salted",
                       }}
-                      style={{ label: "Verify my age" }}
+                      style={{ label: "Verify with ZKPassport" }}
                       onSuccess={({ proofs }) => claimCredential(proofs)}
                       onError={(error) => setClaim({ status: "failed", message: error.message })}
                     />
@@ -371,7 +371,7 @@ function AccountChip(props: {
         {props.credential === undefined
           ? "Checking…"
           : props.credential
-            ? "18+ verified"
+            ? "Verified trader"
             : "Not verified"}
       </span>
       <button type="button" className="address" title={account} onClick={copy}>

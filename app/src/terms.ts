@@ -2,7 +2,8 @@
 export const TERMS = `Fortuna terms (demo)
 
 1. Fortuna is a demonstration on the Aztec testnet. Its markets hold no funds and settle nothing.
-2. You may trade only if you are 18 or older, which your passport proof shows.
+2. You may trade only if you are 18 or older and not on a sanctions list, which your passport
+   proof shows.
 3. Each market counts its orders publicly by side, without naming who placed them.
 4. These terms illustrate binding terms to a proof. They are not a legal agreement.`
 

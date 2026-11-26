@@ -38,14 +38,14 @@ type ZKPassport = InstanceType<typeof ZKPassport>
 export type GateMode = "live" | "dev"
 
 /**
- * The 18+ policies the relayer creates on each credentials contract: one claim per passport, or
- * repeatable
+ * The trader policies the relayer creates on each credentials contract, 18 or older and not on the
+ * sanctions lists: one claim per passport, or repeatable
  */
-const ADULTS_ONCE = 1
-const ADULTS_REPEATABLE = 2
+const TRADERS_ONCE = 1
+const TRADERS_REPEATABLE = 2
 
-/** ZKPassportCredentials' AGE_MIN requirement */
-const AGE_MIN = 1
+/** What a trader's proof shows: an age of at least 18, and not being on the sanctions lists */
+const TRADER = { min_age: 18, sanctions: true, nationality: [0, 0, 0] }
 
 /** The chain whose registries the network's ZKPassport registry mirrors, which proofs must be made against */
 export type SourceChain = "ethereum" | "ethereum_sepolia"
@@ -57,7 +57,7 @@ export interface RelayerConfig {
   /** The domain the app is served from, which its ZKPassport requests carry */
   domain: string
   /**
-   * Whether the markets take the 18+ policy each passport claims once, or the repeatable one, as in
+   * Whether the markets take the trader policy each passport claims once, or the repeatable one, as in
    * testing
    */
   oneClaimPerPassport: boolean
@@ -79,7 +79,7 @@ export class Relayer {
     private readonly credentials: Record<GateMode, Contract>,
     /** The market each credentials contract's policy opens */
     private readonly markets: Record<GateMode, Contract>,
-    /** The 18+ policy the markets take */
+    /** The trader policy the markets take */
     readonly policyId: number,
     private readonly account: AztecAddress,
     private readonly fee: Fee,
@@ -165,7 +165,7 @@ export class Relayer {
     const zkpassportCredentials = artifact(ZKPassportCredentialsJson)
     const fortunaMarket = artifact(FortunaMarketJson)
     const domainHash = new Fr(getScopeHash(config.domain))
-    const policyId = config.oneClaimPerPassport ? ADULTS_ONCE : ADULTS_REPEATABLE
+    const policyId = config.oneClaimPerPassport ? TRADERS_ONCE : TRADERS_REPEATABLE
     const credentials = {} as Record<GateMode, Contract>
     const markets = {} as Record<GateMode, Contract>
     for (const mode of ["live", "dev"] as const) {
@@ -177,16 +177,11 @@ export class Relayer {
         // accepted
         async (contract) => {
           for (const [id, oneClaimPerPassport] of [
-            [ADULTS_ONCE, true],
-            [ADULTS_REPEATABLE, false],
+            [TRADERS_ONCE, true],
+            [TRADERS_REPEATABLE, false],
           ] as const) {
             await contract.methods
-              .create_policy(
-                id,
-                { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] },
-                oneClaimPerPassport,
-                [...new TextEncoder().encode(terms)],
-              )
+              .create_policy(id, TRADER, oneClaimPerPassport, [...new TextEncoder().encode(terms)])
               .send({ from: account, ...(fee ? { fee } : {}), wait: WAIT })
           }
         },
@@ -239,7 +234,10 @@ export class Relayer {
     return this.account.toString()
   }
 
-  /** Proves and sends `claim_age(user, policy)` with the user's proof, one claim at a time. */
+  /**
+   * Proves and sends `claim_age_and_sanctions(user, policy)` with the user's proof, one claim at a
+   * time.
+   */
   claim(mode: GateMode, user: string, proof: ProofResult): Promise<string> {
     const run = this.queue.then(async () => {
       const credentials = this.credentials[mode]
@@ -248,7 +246,7 @@ export class Relayer {
         network: this.network,
       })
       const { receipt } = await credentials.methods
-        .claim_age(AztecAddress.fromStringUnsafe(user), this.policyId)
+        .claim_age_and_sanctions(AztecAddress.fromStringUnsafe(user), this.policyId)
         .send({
           from: this.account,
           capsules: toAztecCapsules(params, credentials.address, this.account),

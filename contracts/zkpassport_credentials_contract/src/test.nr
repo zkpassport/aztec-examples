@@ -2,6 +2,7 @@
 // registry views → nullifier → credential note), NOT proof validity. Proof validity is covered by
 // zkpassport-packages' test-harness.
 mod age;
+mod age_and_sanctions;
 mod custom_data;
 mod fixtures;
 mod nationality;

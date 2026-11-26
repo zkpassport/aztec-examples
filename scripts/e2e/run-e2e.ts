@@ -55,9 +55,7 @@ const VALIDITY_WINDOW = 86400n
 // Client-IVC proving is minutes-scale; never let the tx wait time out first.
 const WAIT = { timeout: 3600, interval: 1 } as const
 
-// The 18+ policy the e2e creates, one claim per passport: ZKPassportCredentials' AGE_MIN
-// requirement, and the policy's id
-const AGE_MIN = 1
+// The 18+ policy the e2e creates, one claim per passport, which the age fixture's proof meets
 const ADULTS = 1n
 
 // The credentials contract's domain, scope_hash("example.com"): the domain the age fixture was
@@ -166,7 +164,7 @@ async function main() {
       // No custom data: the fixture's proof binds none
       .create_policy(
         ADULTS,
-        { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] },
+        { min_age: 18, sanctions: false, nationality: [0, 0, 0] },
         true,
         new Array(64).fill(0),
       )

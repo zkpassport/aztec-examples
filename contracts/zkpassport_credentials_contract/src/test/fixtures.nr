@@ -73,10 +73,10 @@ impl Deployment {
 
     /// Stores the claim's capsules for `sender`, the account that sends the claim: the capsules
     /// ride in the sender's PXE, whoever the proof is bound to.
-    pub unconstrained fn deliver(
+    pub unconstrained fn deliver<let N: u32>(
         &mut self,
         sender: AztecAddress,
-        blob: [Field; 585],
+        blob: [Field; N],
         disclose_payload: Option<[Field; 180]>,
         sanctions_root: Option<Field>,
     ) {
@@ -211,6 +211,22 @@ pub fn bound_to_with<let N: u32>(
 /// longer match its public inputs, which TXE can't notice.
 pub fn blob_with(commitment: Field) -> [Field; 585] {
     swap_commitment(age_blob(), age_commitment(18, 0), commitment)
+}
+
+/// `blob`, a proof of 5 subproofs, as a proof of 6 that also commits to `commitment`: the extra
+/// public input follows the two param commitments. TXE doesn't verify the recursion, so the
+/// public inputs are all that change.
+pub fn with_commitment_added(blob: [Field; 585], commitment: Field) -> [Field; 586] {
+    let params_end = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START + 2;
+    let mut extended = [0; 586];
+    for i in 0..params_end {
+        extended[i] = blob[i];
+    }
+    extended[params_end] = commitment;
+    for i in params_end..585 {
+        extended[i + 1] = blob[i];
+    }
+    extended
 }
 
 fn swap_commitment(mut blob: [Field; 585], from: Field, to: Field) -> [Field; 585] {

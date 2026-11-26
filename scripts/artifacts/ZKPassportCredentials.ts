@@ -119,6 +119,9 @@ credentials: {
     /** claim_age(user: struct, policy_id: field) */
     claim_age: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
+    /** claim_age_and_sanctions(user: struct, policy_id: field) */
+    claim_age_and_sanctions: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** claim_nationality(user: struct, policy_id: field) */
     claim_nationality: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
@@ -129,7 +132,7 @@ credentials: {
     constructor: ((domain: FieldLike, dev_mode: boolean) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** create_policy(policy_id: field, requirement: struct, one_claim_per_passport: boolean, custom_data: array) */
-    create_policy: ((policy_id: FieldLike, requirement: { kind: (bigint | number), min_age: (bigint | number), nationality: (bigint | number)[] }, one_claim_per_passport: boolean, custom_data: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    create_policy: ((policy_id: FieldLike, requirement: { min_age: (bigint | number), sanctions: boolean, nationality: (bigint | number)[] }, one_claim_per_passport: boolean, custom_data: (bigint | number)[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** has_credential(user: struct, policy_id: field) */
     has_credential: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

@@ -27,38 +27,51 @@ pub contract ZKPassportCredentials {
     use zkpassport_aztec_verifier::query::Query;
     use zkpassport_aztec_verifier::verify::{emit_uniqueness_nullifier, ServiceConfig};
 
-    /// A requirement that a proof of age shows the holder is at least `min_age`
-    pub global AGE_MIN: u8 = 1;
-    /// A requirement that a proof discloses `nationality`
-    pub global NATIONALITY: u8 = 2;
-    /// A requirement that a proof shows the holder is not on the sanctions lists
-    pub global SANCTIONS: u8 = 3;
-
     /// The length of a policy's custom data: a SHA-256 digest in lowercase hex, such as the digest
     /// of the terms a user accepts
     pub global CUSTOM_DATA_LENGTH: u32 = 64;
 
-    /// What a ZKPassport proof must show to earn a policy's credential. `kind` is AGE_MIN,
-    /// NATIONALITY or SANCTIONS; `min_age` counts for AGE_MIN and `nationality`, as the MRZ writes it
-    /// ("FRA"), for NATIONALITY.
+    /// What a ZKPassport proof must show to earn a policy's credential, one field per check of the
+    /// query that verifies it: an age of at least `min_age` (0 for none), not being on the
+    /// sanctions lists, and the disclosed `nationality` as the MRZ writes it ("FRA", zeros for
+    /// none). Each claim function verifies one combination of checks.
     #[derive(Deserialize, Eq, Packable, Serialize)]
     pub struct Requirement {
-        pub kind: u8,
         pub min_age: u8,
+        pub sanctions: bool,
         pub nationality: [u8; 3],
     }
 
     impl Requirement {
         pub fn age_min(min_age: u8) -> Self {
-            Requirement { kind: AGE_MIN, min_age, nationality: [0; 3] }
-        }
-
-        pub fn nationality(nationality: str<3>) -> Self {
-            Requirement { kind: NATIONALITY, min_age: 0, nationality: nationality.as_bytes() }
+            Requirement { min_age, sanctions: false, nationality: [0; 3] }
         }
 
         pub fn sanctions() -> Self {
-            Requirement { kind: SANCTIONS, min_age: 0, nationality: [0; 3] }
+            Requirement { min_age: 0, sanctions: true, nationality: [0; 3] }
+        }
+
+        pub fn age_min_and_sanctions(min_age: u8) -> Self {
+            Requirement { min_age, sanctions: true, nationality: [0; 3] }
+        }
+
+        pub fn nationality(nationality: str<3>) -> Self {
+            Requirement { min_age: 0, sanctions: false, nationality: nationality.as_bytes() }
+        }
+
+        /// Whether this requirement asks for exactly these checks
+        fn asks_for(self, age: bool, sanctions: bool, nationality: bool) -> bool {
+            ((self.min_age != 0) == age)
+                & (self.sanctions == sanctions)
+                & ((self.nationality != [0; 3]) == nationality)
+        }
+
+        // Whether a claim function verifies this requirement
+        fn is_claimable(self) -> bool {
+            self.asks_for(true, false, false)
+                | self.asks_for(false, true, false)
+                | self.asks_for(true, true, false)
+                | self.asks_for(false, false, true)
         }
     }
 
@@ -119,11 +132,7 @@ pub contract ZKPassportCredentials {
             self.msg_sender() == self.storage.config.read().admin,
             "only the deployer creates policies",
         );
-        let kind = requirement.kind;
-        assert(
-            (kind == AGE_MIN) | (kind == NATIONALITY) | (kind == SANCTIONS),
-            "unknown requirement",
-        );
+        assert(requirement.is_claimable(), "no claim function for this requirement");
 
         self.storage.policies.at(policy_id).initialize(
             Policy {
@@ -134,15 +143,16 @@ pub contract ZKPassportCredentials {
         );
     }
 
-    /// Claims an AGE_MIN policy's credential for `user` with a proof of age (outer_count_5, param
-    /// commitments = {age(min_age, 0), bind(user, and the policy's custom data if it has some)}).
+    /// Claims the credential of a policy that asks for a minimum age for `user` with a proof of age
+    /// (outer_count_5, param commitments = {age(min_age, 0), bind(user, and the policy's custom
+    /// data if it has some)}).
     ///
     /// The bind commitment, not the sender, authorizes the claim, so any relayer may send it, and
     /// nothing in the transaction names `user`. The proof's capsule is scoped to the sender.
     #[external("private")]
     fn claim_age(user: AztecAddress, policy_id: Field) {
         let policy = self.storage.policies.at(policy_id).read();
-        assert(policy.requirement.kind == AGE_MIN, "not an age policy");
+        assert(policy.requirement.asks_for(true, false, false), "policy asks for another proof");
 
         let query = Query::new().age_min(policy.requirement.min_age);
         let verified = verify_bound(
@@ -162,14 +172,14 @@ pub contract ZKPassportCredentials {
         );
     }
 
-    /// Claims a NATIONALITY policy's credential for `user` with a proof that discloses the
-    /// nationality (outer_count_5, param commitments = {disclose, bind(user)}). The proof must
+    /// Claims the credential of a policy that asks for a nationality for `user` with a proof that
+    /// discloses the nationality (outer_count_5, param commitments = {disclose, bind(user)}). The proof must
     /// disclose the document type as well: passports and ID cards keep the nationality at
     /// different MRZ offsets. The disclosed bytes ride in their own capsule.
     #[external("private")]
     fn claim_nationality(user: AztecAddress, policy_id: Field) {
         let policy = self.storage.policies.at(policy_id).read();
-        assert(policy.requirement.kind == NATIONALITY, "not a nationality policy");
+        assert(policy.requirement.asks_for(false, false, true), "policy asks for another proof");
 
         let query = Query::new().disclose_nationality();
         let verified = verify_bound(
@@ -193,16 +203,44 @@ pub contract ZKPassportCredentials {
         );
     }
 
-    /// Claims a SANCTIONS policy's credential for `user` with a proof that its holder is not on
-    /// the sanctions lists (outer_count_5, param commitments = {sanctions, bind(user)}). The
+    /// Claims the credential of a policy that asks for sanctions screening for `user` with a proof
+    /// that its holder is not on the sanctions lists (outer_count_5, param commitments =
+    /// {sanctions, bind(user)}). The
     /// sanctions root the proof was screened against rides in its own capsule, and the registry
     /// checks it at the proof's date.
     #[external("private")]
     fn claim_sanctions(user: AztecAddress, policy_id: Field) {
         let policy = self.storage.policies.at(policy_id).read();
-        assert(policy.requirement.kind == SANCTIONS, "not a sanctions policy");
+        assert(policy.requirement.asks_for(false, true, false), "policy asks for another proof");
 
         let query = Query::new().sanctions();
+        let verified = verify_bound(
+            self.context,
+            self.msg_sender(),
+            user,
+            self.internal.service(),
+            unpack_custom_data(policy.custom_data),
+            query,
+        );
+
+        self.internal.issue(
+            user,
+            policy_id,
+            policy.one_claim_per_passport,
+            verified.unique_identifier,
+        );
+    }
+
+    /// Claims the credential of a policy that asks for a minimum age and sanctions screening for
+    /// `user` with one proof of both (outer_count_6, param commitments = {age(min_age, 0),
+    /// sanctions, bind(user)}). The sanctions root rides in its own capsule, as for
+    /// `claim_sanctions`.
+    #[external("private")]
+    fn claim_age_and_sanctions(user: AztecAddress, policy_id: Field) {
+        let policy = self.storage.policies.at(policy_id).read();
+        assert(policy.requirement.asks_for(true, true, false), "policy asks for another proof");
+
+        let query = Query::new().age_min(policy.requirement.min_age).sanctions();
         let verified = verify_bound(
             self.context,
             self.msg_sender(),
