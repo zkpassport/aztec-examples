@@ -163,7 +163,13 @@ async function main() {
   log(`credentials at ${credentials.address}`)
   await timed("create the 18+ policy", () =>
     credentials.methods
-      .create_policy(ADULTS, { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] }, true)
+      // No custom data: the fixture's proof binds none
+      .create_policy(
+        ADULTS,
+        { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] },
+        true,
+        new Array(64).fill(0),
+      )
       .send({ from: admin, wait: WAIT }),
   )
 

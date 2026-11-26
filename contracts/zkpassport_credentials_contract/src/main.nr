@@ -1,12 +1,14 @@
+mod bound;
 mod test;
 
 use aztec::macros::aztec;
 
 /// Private ZKPassport credentials. The deployer creates policies, each a requirement a proof must
-/// meet; a user who meets one gets a private credential note for that policy, which other
-/// contracts check with `assert_has_credential`.
+/// meet and, optionally, custom data it must be bound to; a user who meets one gets a private
+/// credential note for that policy, which other contracts check with `assert_has_credential`.
 #[aztec]
 pub contract ZKPassportCredentials {
+    use crate::bound::{pack_custom_data, unpack_custom_data, verify_bound};
     use aztec::{
         macros::{functions::{external, initializer, internal}, notes::note, storage::storage},
         messages::delivery::MessageDelivery,
@@ -23,9 +25,7 @@ pub contract ZKPassportCredentials {
         utils::comparison::Comparator,
     };
     use zkpassport_aztec_verifier::query::Query;
-    use zkpassport_aztec_verifier::verify::{
-        emit_uniqueness_nullifier, ServiceConfig, verify_zkpassport_proof_for_user,
-    };
+    use zkpassport_aztec_verifier::verify::{emit_uniqueness_nullifier, ServiceConfig};
 
     /// A requirement that a proof of age shows the holder is at least `min_age`
     pub global AGE_MIN: u8 = 1;
@@ -33,6 +33,10 @@ pub contract ZKPassportCredentials {
     pub global NATIONALITY: u8 = 2;
     /// A requirement that a proof shows the holder is not on the sanctions lists
     pub global SANCTIONS: u8 = 3;
+
+    /// The length of a policy's custom data: a SHA-256 digest in lowercase hex, such as the digest
+    /// of the terms a user accepts
+    pub global CUSTOM_DATA_LENGTH: u32 = 64;
 
     /// What a ZKPassport proof must show to earn a policy's credential. `kind` is AGE_MIN,
     /// NATIONALITY or SANCTIONS; `min_age` counts for AGE_MIN and `nationality`, as the MRZ writes it
@@ -58,12 +62,15 @@ pub contract ZKPassportCredentials {
         }
     }
 
-    /// A policy: the requirement its credential stands for, and whether each passport earns the
-    /// credential once or can claim it again, as in testing.
+    /// A policy: the requirement its credential stands for, whether each passport earns the
+    /// credential once or can claim it again, as in testing, and the custom data a proof must be
+    /// bound to, all zeros for none.
     #[derive(Eq, Packable)]
     pub struct Policy {
         requirement: Requirement,
         one_claim_per_passport: bool,
+        // Packed with `pack_custom_data`
+        custom_data: [Field; 3],
     }
 
     /// Set when the contract is deployed: who creates policies, the `scope_hash` of the domain the
@@ -98,9 +105,16 @@ pub contract ZKPassportCredentials {
         self.storage.config.initialize(Config { admin: self.msg_sender(), domain, dev_mode });
     }
 
-    /// Creates policy `policy_id`. Only the deployer can, and a policy never changes.
+    /// Creates policy `policy_id`. Only the deployer can, and a policy never changes. A claim's
+    /// proof must be bound to `custom_data` as well as to the user, unless it is all zeros; the
+    /// ZKPassport request binds it as `custom_data`, byte for byte.
     #[external("public")]
-    fn create_policy(policy_id: Field, requirement: Requirement, one_claim_per_passport: bool) {
+    fn create_policy(
+        policy_id: Field,
+        requirement: Requirement,
+        one_claim_per_passport: bool,
+        custom_data: [u8; CUSTOM_DATA_LENGTH],
+    ) {
         assert(
             self.msg_sender() == self.storage.config.read().admin,
             "only the deployer creates policies",
@@ -112,12 +126,16 @@ pub contract ZKPassportCredentials {
         );
 
         self.storage.policies.at(policy_id).initialize(
-            Policy { requirement, one_claim_per_passport },
+            Policy {
+                requirement,
+                one_claim_per_passport,
+                custom_data: pack_custom_data(custom_data),
+            },
         );
     }
 
     /// Claims an AGE_MIN policy's credential for `user` with a proof of age (outer_count_5, param
-    /// commitments = {age(min_age, 0), bind(user)}).
+    /// commitments = {age(min_age, 0), bind(user, and the policy's custom data if it has some)}).
     ///
     /// The bind commitment, not the sender, authorizes the claim, so any relayer may send it, and
     /// nothing in the transaction names `user`. The proof's capsule is scoped to the sender.
@@ -127,11 +145,12 @@ pub contract ZKPassportCredentials {
         assert(policy.requirement.kind == AGE_MIN, "not an age policy");
 
         let query = Query::new().age_min(policy.requirement.min_age);
-        let verified = verify_zkpassport_proof_for_user(
+        let verified = verify_bound(
             self.context,
             self.msg_sender(),
             user,
             self.internal.service(),
+            unpack_custom_data(policy.custom_data),
             query,
         );
 
@@ -153,11 +172,12 @@ pub contract ZKPassportCredentials {
         assert(policy.requirement.kind == NATIONALITY, "not a nationality policy");
 
         let query = Query::new().disclose_nationality();
-        let verified = verify_zkpassport_proof_for_user(
+        let verified = verify_bound(
             self.context,
             self.msg_sender(),
             user,
             self.internal.service(),
+            unpack_custom_data(policy.custom_data),
             query,
         );
         assert(
@@ -183,11 +203,12 @@ pub contract ZKPassportCredentials {
         assert(policy.requirement.kind == SANCTIONS, "not a sanctions policy");
 
         let query = Query::new().sanctions();
-        let verified = verify_zkpassport_proof_for_user(
+        let verified = verify_bound(
             self.context,
             self.msg_sender(),
             user,
             self.internal.service(),
+            unpack_custom_data(policy.custom_data),
             query,
         );
 

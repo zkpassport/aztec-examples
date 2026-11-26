@@ -60,6 +60,7 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress) {
                 policy_id,
                 Requirement::age_min(18),
                 true,
+                [0; 64],
             ),
         );
     }
@@ -80,12 +81,16 @@ unconstrained fn claim_credential(
 ) {
     let relayer = env.create_light_account();
 
-    let fixture_bind = bind_commitment(AGE_FIXTURE_BIND_ADDRESS, TXE_CHAIN_ID);
+    let fixture_bind = bind_commitment(
+        Option::some(AGE_FIXTURE_BIND_ADDRESS),
+        TXE_CHAIN_ID,
+        Option::none(),
+    );
     let mut blob = age_fixture_blob_for_txe();
     let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
     for i in params_start..params_start + 2 {
         if blob[i] == fixture_bind {
-            blob[i] = bind_commitment(user.to_field(), TXE_CHAIN_ID);
+            blob[i] = bind_commitment(Option::some(user.to_field()), TXE_CHAIN_ID, Option::none());
         }
     }
     env.utility_context_at(credentials, |_| {

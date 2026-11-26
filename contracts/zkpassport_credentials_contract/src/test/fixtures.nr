@@ -1,5 +1,5 @@
 use crate::ZKPassportCredentials;
-use crate::ZKPassportCredentials::Requirement;
+use crate::ZKPassportCredentials::{CUSTOM_DATA_LENGTH, Requirement};
 use aztec::{
     oracle::capsules,
     protocol::{address::AztecAddress, traits::{FromField, ToField}},
@@ -33,6 +33,8 @@ pub global FIXTURE_DOMAIN: Field = scope_hash("example.com");
 pub global POLICY: Field = 1;
 pub global OTHER_POLICY: Field = 2;
 
+pub global NO_CUSTOM_DATA: [u8; CUSTOM_DATA_LENGTH] = [0; CUSTOM_DATA_LENGTH];
+
 pub struct Deployment {
     pub env: TestEnvironment,
     pub credentials: AztecAddress,
@@ -40,12 +42,23 @@ pub struct Deployment {
 }
 
 impl Deployment {
-    /// Creates policy `policy_id`, as the deployer
+    /// Creates policy `policy_id`, without custom data, as the deployer
     pub unconstrained fn create_policy(
         &mut self,
         policy_id: Field,
         requirement: Requirement,
         one_claim_per_passport: bool,
+    ) {
+        self.create_policy_bound_to(policy_id, requirement, one_claim_per_passport, NO_CUSTOM_DATA);
+    }
+
+    /// Creates policy `policy_id`, whose proofs must be bound to `custom_data`, as the deployer
+    pub unconstrained fn create_policy_bound_to(
+        &mut self,
+        policy_id: Field,
+        requirement: Requirement,
+        one_claim_per_passport: bool,
+        custom_data: [u8; CUSTOM_DATA_LENGTH],
     ) {
         let _ = self.env.call_public(
             self.deployer,
@@ -53,6 +66,7 @@ impl Deployment {
                 policy_id,
                 requirement,
                 one_claim_per_passport,
+                custom_data,
             ),
         );
     }
@@ -162,8 +176,33 @@ pub fn age_blob() -> [Field; 585] {
 pub fn bound_to(user: AztecAddress, blob: [Field; 585]) -> [Field; 585] {
     swap_commitment(
         blob,
-        bind_commitment(AGE_FIXTURE_BIND_ADDRESS, TXE_CHAIN_ID),
-        bind_commitment(user.to_field(), TXE_CHAIN_ID),
+        bind_commitment(
+            Option::some(AGE_FIXTURE_BIND_ADDRESS),
+            TXE_CHAIN_ID,
+            Option::none(),
+        ),
+        bind_commitment(Option::some(user.to_field()), TXE_CHAIN_ID, Option::none()),
+    )
+}
+
+/// `blob` with its bind commitment moved to `user` and `custom_data`
+pub fn bound_to_with<let N: u32>(
+    user: AztecAddress,
+    custom_data: [u8; N],
+    blob: [Field; 585],
+) -> [Field; 585] {
+    swap_commitment(
+        blob,
+        bind_commitment(
+            Option::some(AGE_FIXTURE_BIND_ADDRESS),
+            TXE_CHAIN_ID,
+            Option::none(),
+        ),
+        bind_commitment(
+            Option::some(user.to_field()),
+            TXE_CHAIN_ID,
+            Option::some(BoundedVec::from_array(custom_data)),
+        ),
     )
 }
 

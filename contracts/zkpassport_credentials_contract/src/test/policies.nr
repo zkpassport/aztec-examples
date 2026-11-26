@@ -1,4 +1,4 @@
-use crate::test::fixtures::{age_blob, bound_to, OTHER_POLICY, POLICY, setup};
+use crate::test::fixtures::{age_blob, bound_to, NO_CUSTOM_DATA, OTHER_POLICY, POLICY, setup};
 use crate::ZKPassportCredentials;
 use crate::ZKPassportCredentials::Requirement;
 
@@ -13,6 +13,7 @@ unconstrained fn only_the_deployer_creates_policies() {
             POLICY,
             Requirement::age_min(18),
             true,
+            NO_CUSTOM_DATA,
         ),
     );
 }

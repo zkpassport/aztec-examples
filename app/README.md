@@ -4,13 +4,15 @@ An 18+ prediction market on the Aztec testnet. Orders go to a `FortunaMarket` co
 refuses them unless the trader holds Fortuna's 18+ credential. The user gets the credential by
 proving with ZKPassport that they are 18 or older: the proof is bound to the user's Aztec address
 and verified by a `ZKPassportCredentials` contract, which mints that address a private credential
-note of its 18+ policy. Fortuna learns that the user is over 18 and nothing else, and nothing public
-names the user.
+note of its 18+ policy. Before verifying, the user accepts Fortuna's terms, and the proof is bound
+to their SHA-256 digest as well, so the credential records which terms its holder accepted. Fortuna
+learns that the user is over 18 and nothing else, and nothing public names the user.
 
 - `src/`: the page (Vite + React). Its "Verify my age" button is ZKPassport's hosted flow
   (`VerifyWithZKPassport` from [`@zkpassport/ui`](https://www.npmjs.com/package/@zkpassport/ui)),
-  which opens ZKPassport's verification window. It asks for an age proof in `compressed` mode, bound
-  to the user's Aztec address and the relayer's network, against the registries the network's
+  which opens ZKPassport's verification window. It shows the terms (`src/terms.ts`) and offers the
+  button once they're accepted. It asks for an age proof in `compressed` mode, bound to the user's
+  Aztec address, the relayer's network and the terms' digest, against the registries the network's
   ZKPassport registry mirrors (Sepolia's on the testnet and on a local network, which takes the
   SDK's dev mode), and the page sends the proof to the relayer. Each market card shows the orders
   the market contract has counted, and the result of your own order. The address is an Aztec account
@@ -24,13 +26,13 @@ names the user.
   credential.
 - `server/`: the relayer. On first start it deploys two `ZKPassportCredentials` contracts for the
   page's domain, one that accepts only real passports and one in dev mode that also accepts
-  ZKPassport's mock passports. On each it creates two 18+ policies, one that each passport claims
-  once and one it can claim again, and it deploys a `FortunaMarket` for one of them. It then proves
-  and sends each `claim_age(user, policy)` with the user's proof. It can't read the credentials,
-  which are private to their holders. Fees go through the testnet's sponsored fee contract. The
-  proof's capsules come from the SDK's `getAztecVerifierParameters`, delivered to the credentials
-  contract with `toAztecCapsules`. That, ZKPassport's registry artifact and its registration with
-  the relayer's wallet come from
+  ZKPassport's mock passports. On each it creates two 18+ policies bound to the terms' digest, one
+  that each passport claims once and one it can claim again, and it deploys a `FortunaMarket` for
+  one of them. It then proves and sends each `claim_age(user, policy)` with the user's proof. It
+  can't read the credentials, which are private to their holders. Fees go through the testnet's
+  sponsored fee contract. The proof's capsules come from the SDK's `getAztecVerifierParameters`,
+  delivered to the credentials contract with `toAztecCapsules`. That, ZKPassport's registry artifact
+  and its registration with the relayer's wallet come from
   [`@zkpassport/aztec`](https://www.npmjs.com/package/@zkpassport/aztec).
 
 ## Running it
@@ -62,8 +64,9 @@ The relayer reads:
   policies are recorded apart;
 - `PORT`: 3001 by default.
 
-`server/deployments.json` records the contracts it deployed, by node and domain. A recorded contract
-the node no longer has, or has with older code, is deployed again.
+`server/deployments.json` records the contracts it deployed, by node, domain and terms digest, so
+changing the terms deploys new contracts. A recorded contract the node no longer has, or has with
+older code, is deployed again.
 
 ## Local network
 
