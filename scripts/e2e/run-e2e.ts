@@ -7,6 +7,7 @@
  *
  * Three outcomes are asserted:
  *   CLAIM MINED           — the real proof verifies and the tx lands
+ *   CREDENTIAL HELD       — the claiming account holds the credential under the policy
  *   DOUBLE CLAIM REJECTED — the uniqueness nullifier collides
  *   TAMPERED PROOF REJECTED — a one-bit-flipped proof fails client-side proving
  */
@@ -219,10 +220,11 @@ async function main() {
     `capsule blob: ${blob.length} fields (vk ${VK_FIELDS} + proof ${PROOF_FIELDS} + pi ${FIXTURE.publicInputs.length} + circuit version)`,
   )
 
-  // The capsule is scoped to `user` — the sandbox account sending the transaction. The claim
-  // itself goes to the fixture's bound address: the proof carries a bind commitment over it,
-  // so the sender is effectively a relayer and the credential's holder needs no account here.
-  const boundUser = AztecAddress.fromFieldUnsafe(Fr.fromHexString(FIXTURE.bindAddress))
+  // The fixture's proof is bound to the local network test account the e2e sends from, which
+  // claims the credential for itself
+  if (!Fr.fromHexString(FIXTURE.bindAddress).equals(user.toField())) {
+    throw new Error(`the fixture is bound to ${FIXTURE.bindAddress}, not the sender ${user}`)
+  }
   const capsule = (fields: Fr[]) =>
     new Capsule(credentials.address, new Fr(PROOF_CAPSULE_SLOT), fields, user as AztecAddress)
 
@@ -251,7 +253,7 @@ async function main() {
 
     try {
       const { receipt: bad } = await credentials.methods
-        .claim_age(boundUser, ADULTS)
+        .claim_age(user, ADULTS)
         .send({ from: user, capsules: [capsule(tampered)], wait: WAIT })
 
       tamperFailed = false
@@ -279,19 +281,22 @@ async function main() {
   // ---- 4b. The real claim --------------------------------------------------
   const [{ receipt }, claimSecs] = await timed("claim (private tx, client-IVC proving)", () =>
     credentials.methods
-      .claim_age(boundUser, ADULTS)
+      .claim_age(user, ADULTS)
       .send({ from: user, capsules: [capsule(blob)], wait: WAIT }),
   )
   console.log(`CLAIM MINED: ${receipt.txHash.toString()}`)
-  // The credential is a private note owned by the fixture's bound address, which has no keys in
-  // this wallet, so the e2e can't read it. The TXE tests check who holds it.
+
+  const { result: credentialHeld } = await credentials.methods
+    .has_credential(user, ADULTS)
+    .simulate({ from: user })
+  console.log(`CREDENTIAL HELD: ${credentialHeld}`)
 
   // ---- 5. Double claim must collide on the uniqueness nullifier -------------
   let doubleFailed = false
   let doubleError = ""
   try {
     await credentials.methods
-      .claim_age(boundUser, ADULTS)
+      .claim_age(user, ADULTS)
       .send({ from: user, capsules: [capsule(blob)], wait: WAIT })
   } catch (e) {
     doubleFailed = true
@@ -314,6 +319,10 @@ async function main() {
 
   await wallet.stop()
 
+  if (!credentialHeld) {
+    console.error("FAILED: the claim mined but the account holds no credential under the policy.")
+    process.exit(1)
+  }
   if (!doubleFailed) {
     console.error(
       "FAILED: the double claim was not rejected — the uniqueness nullifier did not collide.",
