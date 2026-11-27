@@ -25,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import FortunaMarketJson from "../../target/fortuna_market_contract-FortunaMarket.json" with { type: "json" }
 import ZKPassportCredentialsJson from "../../target/zkpassport_credentials_contract-ZKPassportCredentials.json" with { type: "json" }
+import { idReadOf } from "../src/proof"
 import { TERMS, termsDigest } from "../src/terms"
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
@@ -46,6 +47,9 @@ const TRADERS_REPEATABLE = 2
 
 /** What a trader's proof shows: an age of at least 18, and not being on the sanctions lists */
 const TRADER = { min_age: 18, sanctions: true, nationality: [0, 0, 0] }
+
+/** Traders may prove with an ID read by the camera of ZKPassport's app, as well as from its chip */
+const ACCEPTS_CAMERA_READ = true
 
 /** The chain whose registries the network's ZKPassport registry mirrors, which proofs must be made against */
 export type SourceChain = "ethereum" | "ethereum_sepolia"
@@ -181,7 +185,9 @@ export class Relayer {
             [TRADERS_REPEATABLE, false],
           ] as const) {
             await contract.methods
-              .create_policy(id, TRADER, oneClaimPerPassport, [...new TextEncoder().encode(terms)])
+              .create_policy(id, TRADER, oneClaimPerPassport, ACCEPTS_CAMERA_READ, [
+                ...new TextEncoder().encode(terms),
+              ])
               .send({ from: account, ...(fee ? { fee } : {}), wait: WAIT })
           }
         },
@@ -235,8 +241,9 @@ export class Relayer {
   }
 
   /**
-   * Proves and sends `claim_age_and_sanctions(user, policy)` with the user's proof, one claim at a
-   * time.
+   * Proves and sends the user's claim, one claim at a time: `claim_age_and_sanctions(user, policy)`
+   * for an ID read from its chip, `claim_age_and_sanctions_from_camera_read` for one read by the
+   * camera of ZKPassport's app.
    */
   claim(mode: GateMode, user: string, proof: ProofResult): Promise<string> {
     const run = this.queue.then(async () => {
@@ -245,14 +252,16 @@ export class Relayer {
         proof,
         network: this.network,
       })
-      const { receipt } = await credentials.methods
-        .claim_age_and_sanctions(AztecAddress.fromStringUnsafe(user), this.policyId)
-        .send({
-          from: this.account,
-          capsules: toAztecCapsules(params, credentials.address, this.account),
-          ...(this.fee ? { fee: this.fee } : {}),
-          wait: WAIT,
-        })
+      const claim =
+        idReadOf(proof) === "camera"
+          ? credentials.methods.claim_age_and_sanctions_from_camera_read
+          : credentials.methods.claim_age_and_sanctions
+      const { receipt } = await claim(AztecAddress.fromStringUnsafe(user), this.policyId).send({
+        from: this.account,
+        capsules: toAztecCapsules(params, credentials.address, this.account),
+        ...(this.fee ? { fee: this.fee } : {}),
+        wait: WAIT,
+      })
       return receipt.txHash.toString()
     })
     this.queue = run.catch(() => undefined)

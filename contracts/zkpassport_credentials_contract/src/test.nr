@@ -3,6 +3,7 @@
 // zkpassport-packages' test-harness.
 mod age;
 mod age_and_sanctions;
+mod camera_read;
 mod custom_data;
 mod fixtures;
 mod nationality;

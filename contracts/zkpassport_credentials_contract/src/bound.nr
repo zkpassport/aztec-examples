@@ -1,26 +1,57 @@
 use aztec::{context::PrivateContext, protocol::address::AztecAddress};
+use zkpassport::constants::VERIFICATION_TIER_DEVICE_ATTESTED;
 use zkpassport_aztec_verifier::{
     query::Query,
-    verify::{ServiceConfig, VerifiedProof, verify_zkpassport_proof},
+    verify::{ServiceConfig, VerifiedProof, verify_device_attested_proof, verify_zkpassport_proof},
 };
 
-/// Verifies a proof that meets `query` and is bound to `user`, and to `custom_data` as well unless
-/// it is all zeros
+/// Verifies a chip read's proof that meets `query` and is bound to `user`, and to `custom_data` as
+/// well unless it is all zeros
 pub fn verify_bound<let K: u32, let D: u32, let N: u32>(
     context: &mut PrivateContext,
     capsule_scope: AztecAddress,
     user: AztecAddress,
     service: ServiceConfig,
     custom_data: [u8; N],
-    query: Query<K, D, 0>,
+    query: Query<K, D, 0, 0>,
 ) -> VerifiedProof {
+    verify_zkpassport_proof(
+        context,
+        capsule_scope,
+        service,
+        bind(query, user, custom_data),
+    )
+}
+
+/// As `verify_bound`, for the proof of an ID read by the camera of ZKPassport's app and attested
+/// by the device
+pub fn verify_bound_camera_read<let K: u32, let D: u32, let N: u32>(
+    context: &mut PrivateContext,
+    capsule_scope: AztecAddress,
+    user: AztecAddress,
+    service: ServiceConfig,
+    custom_data: [u8; N],
+    query: Query<K, D, 0, 0>,
+) -> VerifiedProof {
+    verify_device_attested_proof(
+        context,
+        capsule_scope,
+        service.allow_tier(VERIFICATION_TIER_DEVICE_ATTESTED),
+        bind(query, user, custom_data),
+    )
+}
+
+fn bind<let K: u32, let D: u32, let N: u32>(
+    query: Query<K, D, 0, 0>,
+    user: AztecAddress,
+    custom_data: [u8; N],
+) -> Query<K + 1, D, 1, 0> {
     let query = query.bind_user_address(user);
-    let query = if custom_data == [0; N] {
+    if custom_data == [0; N] {
         query
     } else {
         query.bind_custom_data(custom_data.as_str_unchecked())
-    };
-    verify_zkpassport_proof(context, capsule_scope, service, query)
+    }
 }
 
 /// `bytes` packed big-endian into fields of 31 bytes each, so storing them takes 3 slots, not 64

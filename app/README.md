@@ -3,8 +3,9 @@
 A prediction market on the Aztec testnet for traders who are 18 or older and not on a sanctions
 list. Orders go to a `FortunaMarket` contract, which refuses them unless the trader holds Fortuna's
 trader credential. The user gets the credential with one ZKPassport proof that they are 18 or older
-and not on the sanctions lists: the proof is bound to the user's Aztec address and verified by a
-`ZKPassportCredentials` contract's `claim_age_and_sanctions`, which mints that address a private
+and not on the sanctions lists, from an ID read from its chip or by the phone's camera: the proof is bound to the user's Aztec address and verified by a
+`ZKPassportCredentials` contract's `claim_age_and_sanctions` (or
+`claim_age_and_sanctions_from_camera_read` for a camera read), which mints that address a private
 credential note of its trader policy. Before verifying, the user accepts Fortuna's terms, and the
 proof is bound to their SHA-256 digest as well, so the credential records which terms its holder
 accepted. Fortuna learns that the user is over 18 and not on a sanctions list, and nothing else, and
@@ -16,7 +17,9 @@ nothing public names the user.
   button once they're accepted. It asks for a proof of age and sanctions screening in `compressed`
   mode, bound to the user's Aztec address, the relayer's network and the terms' digest, against the
   registries the network's ZKPassport registry mirrors (Sepolia's on the testnet and on a local
-  network, which takes the SDK's dev mode), and the page sends the proof to the relayer. Each market
+  network, which takes the SDK's dev mode). It accepts an ID read from its chip or by the camera of
+  ZKPassport's app (verification tiers 1 and 2); the app only reads by camera for the domains
+  ZKPassport lists for it. The page sends the proof to the relayer. Each market
   card shows the orders the market contract has counted, and the result of your own order. The
   address is an Aztec account the page makes in this browser, with an embedded wallet that keeps its
   secret key in `localStorage`. The account is never deployed: it receives the credential note and
@@ -28,10 +31,11 @@ nothing public names the user.
   its credential.
 - `server/`: the relayer. On first start it deploys two `ZKPassportCredentials` contracts for the
   page's domain, one that accepts only real passports and one in dev mode that also accepts
-  ZKPassport's mock passports. On each it creates two trader policies bound to the terms' digest,
-  one that each passport claims once and one it can claim again, and it deploys a `FortunaMarket`
-  for one of them. It then proves and sends each `claim_age_and_sanctions(user, policy)` with the
-  user's proof. It can't read the credentials, which are private to their holders. Fees go through
+  ZKPassport's mock passports. On each it creates two trader policies bound to the terms' digest
+  and accepting camera reads, one that each passport claims once and one it can claim again, and it deploys a `FortunaMarket`
+  for one of them. It then proves and sends each claim with the user's proof:
+  `claim_age_and_sanctions(user, policy)` for a chip read's `outer_count_<n>` proof,
+  `claim_age_and_sanctions_from_camera_read` for a camera read's `outer_attested_id_count_<n>`. It can't read the credentials, which are private to their holders. Fees go through
   the testnet's sponsored fee contract. The proof's capsules come from the SDK's
   `getAztecVerifierParameters`, delivered to the credentials contract with `toAztecCapsules`. That,
   ZKPassport's registry artifact and its registration with the relayer's wallet come from

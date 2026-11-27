@@ -166,6 +166,7 @@ async function main() {
         ADULTS,
         { min_age: 18, sanctions: false, nationality: [0, 0, 0] },
         true,
+        false,
         new Array(64).fill(0),
       )
       .send({ from: admin, wait: WAIT }),
