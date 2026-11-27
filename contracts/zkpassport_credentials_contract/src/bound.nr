@@ -5,15 +5,15 @@ use zkpassport_aztec_verifier::{
     verify::{ServiceConfig, VerifiedProof, verify_device_attested_proof, verify_zkpassport_proof},
 };
 
-/// Verifies a chip read's proof that meets `query` and is bound to `user`, and to `custom_data` as
-/// well unless it is all zeros
-pub fn verify_bound<let K: u32, let D: u32, let N: u32>(
+/// Verifies the proof of an ID its issuer signed, such as a chip read or an Aadhaar, that meets
+/// `query` and is bound to `user`, and to `custom_data` as well unless it is all zeros
+pub fn verify_bound<let K: u32, let D: u32, let F: u32, let N: u32>(
     context: &mut PrivateContext,
     capsule_scope: AztecAddress,
     user: AztecAddress,
     service: ServiceConfig,
     custom_data: [u8; N],
-    query: Query<K, D, 0, 0>,
+    query: Query<K, D, 0, F>,
 ) -> VerifiedProof {
     verify_zkpassport_proof(
         context,
@@ -41,11 +41,11 @@ pub fn verify_bound_camera_read<let K: u32, let D: u32, let N: u32>(
     )
 }
 
-fn bind<let K: u32, let D: u32, let N: u32>(
-    query: Query<K, D, 0, 0>,
+fn bind<let K: u32, let D: u32, let F: u32, let N: u32>(
+    query: Query<K, D, 0, F>,
     user: AztecAddress,
     custom_data: [u8; N],
-) -> Query<K + 1, D, 1, 0> {
+) -> Query<K + 1, D, 1, F> {
     let query = query.bind_user_address(user);
     if custom_data == [0; N] {
         query
