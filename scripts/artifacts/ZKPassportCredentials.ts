@@ -125,6 +125,9 @@ credentials: {
     /** claim_age_and_sanctions_from_camera_read(user: struct, policy_id: field) */
     claim_age_and_sanctions_from_camera_read: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
+    /** claim_age_and_sanctions_with_face_match(user: struct, policy_id: field) */
+    claim_age_and_sanctions_with_face_match: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** claim_nationality(user: struct, policy_id: field) */
     claim_nationality: ((user: AztecAddressLike, policy_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 

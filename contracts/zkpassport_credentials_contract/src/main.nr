@@ -83,7 +83,8 @@ pub contract ZKPassportCredentials {
     /// be bound to, all zeros for none.
     ///
     /// A camera read and a chip read of the same ID have different unique identifiers, so with
-    /// `one_claim_per_passport` an ID can earn the credential once by each read.
+    /// `one_claim_per_passport` an ID can earn the credential once by each read. An Aadhaar, which
+    /// every policy accepts as an ID its issuer signed, has its own too.
     #[derive(Eq, Packable)]
     pub struct Policy {
         requirement: Requirement,
@@ -250,6 +251,34 @@ pub contract ZKPassportCredentials {
         assert(policy.requirement.asks_for(true, true, false), "policy asks for another proof");
 
         let query = Query::new().age_min(policy.requirement.min_age).sanctions();
+        let verified = verify_bound(
+            self.context,
+            self.msg_sender(),
+            user,
+            self.internal.service(),
+            unpack_custom_data(policy.custom_data),
+            query,
+        );
+
+        self.internal.issue(
+            user,
+            policy_id,
+            policy.one_claim_per_passport,
+            verified.unique_identifier,
+        );
+    }
+
+    /// As `claim_age_and_sanctions`, with a proof that also carries a strict face match (param
+    /// commitments = {age(min_age, 0), sanctions, face match, bind(user)}). An Aadhaar proves this
+    /// way, as ZKPassport's app adds a strict face match to each of its proofs, and so can a chip
+    /// read whose request asked for one. The face match rides in its own capsule.
+    #[external("private")]
+    fn claim_age_and_sanctions_with_face_match(user: AztecAddress, policy_id: Field) {
+        let policy = self.storage.policies.at(policy_id).read();
+        assert(policy.requirement.asks_for(true, true, false), "policy asks for another proof");
+
+        let query =
+            Query::new().age_min(policy.requirement.min_age).sanctions().strict_face_match();
         let verified = verify_bound(
             self.context,
             self.msg_sender(),

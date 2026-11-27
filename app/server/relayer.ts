@@ -243,7 +243,8 @@ export class Relayer {
   /**
    * Proves and sends the user's claim, one claim at a time: `claim_age_and_sanctions(user, policy)`
    * for an ID read from its chip, `claim_age_and_sanctions_from_camera_read` for one read by the
-   * camera of ZKPassport's app.
+   * camera of ZKPassport's app, and `claim_age_and_sanctions_with_face_match` for an Aadhaar, whose
+   * proof always carries a strict face match.
    */
   claim(mode: GateMode, user: string, proof: ProofResult): Promise<string> {
     const run = this.queue.then(async () => {
@@ -252,10 +253,11 @@ export class Relayer {
         proof,
         network: this.network,
       })
-      const claim =
-        idReadOf(proof) === "camera"
-          ? credentials.methods.claim_age_and_sanctions_from_camera_read
-          : credentials.methods.claim_age_and_sanctions
+      const claim = {
+        chip: credentials.methods.claim_age_and_sanctions,
+        camera: credentials.methods.claim_age_and_sanctions_from_camera_read,
+        aadhaar: credentials.methods.claim_age_and_sanctions_with_face_match,
+      }[idReadOf(proof) ?? "chip"]
       const { receipt } = await claim(AztecAddress.fromStringUnsafe(user), this.policyId).send({
         from: this.account,
         capsules: toAztecCapsules(params, credentials.address, this.account),

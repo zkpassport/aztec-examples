@@ -24,6 +24,13 @@ type Claim =
 
 type Counts = Record<number, { yes: number; no: number }>
 
+/** What the claimed credential says the trader verified with */
+const READ_LABELS: Record<IdRead, string> = {
+  chip: "an ID read from its chip",
+  camera: "an ID read by the phone's camera",
+  aadhaar: "an Aadhaar",
+}
+
 export function App() {
   const [wallet, setWallet] = useState<FortunaWallet | undefined>()
   const [walletError, setWalletError] = useState<string | undefined>()
@@ -199,8 +206,7 @@ export function App() {
               </p>
               {claim.status === "claimed" && (
                 <p className="mono">
-                  Claimed in {shortHash(claim.txHash)} with an ID read{" "}
-                  {claim.read === "chip" ? "from its chip" : "by the phone's camera"}
+                  Claimed in {shortHash(claim.txHash)} with {READ_LABELS[claim.read]}
                 </p>
               )}
             </div>
@@ -256,7 +262,8 @@ export function App() {
                       service={{
                         devMode: sourceChain === "ethereum_sepolia",
                         uniqueIdentifierType: "non-salted",
-                        // An ID read from its chip, or by the camera of ZKPassport's app
+                        // An ID its issuer signed, such as a chip read or an Aadhaar, or one read by
+                        // the camera of ZKPassport's app
                         allowedVerificationMethods: [
                           VerificationTier.GOVERNMENT_SIGNED,
                           VerificationTier.DEVICE_ATTESTED,

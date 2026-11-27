@@ -1,6 +1,7 @@
 // TXE no-ops the recursion opcode, so these tests prove the wiring (capsules → parse → policy →
 // registry views → nullifier → credential note), NOT proof validity. Proof validity is covered by
 // zkpassport-packages' test-harness.
+mod aadhaar;
 mod age;
 mod age_and_sanctions;
 mod camera_read;

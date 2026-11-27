@@ -1,11 +1,15 @@
 import type { ProofResult } from "@zkpassport/sdk"
 
-/** How the ID behind a proof was read: from its chip, or by the camera of ZKPassport's app */
-export type IdRead = "chip" | "camera"
+/**
+ * How the ID behind a proof was read: a passport or ID card from its chip, one by the camera of
+ * ZKPassport's app, or an Aadhaar from its QR code
+ */
+export type IdRead = "chip" | "camera" | "aadhaar"
 
 const OUTER_PROOF_PREFIXES: Record<IdRead, string> = {
   chip: "outer_count_",
   camera: "outer_attested_id_count_",
+  aadhaar: "outer_aadhaar_count_",
 }
 
 /** The outer proof among a verification's proofs, which an Aztec contract verifies, and how its ID was read */

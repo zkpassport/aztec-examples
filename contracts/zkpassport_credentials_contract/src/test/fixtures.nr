@@ -8,8 +8,9 @@ use aztec::{
 use zkpassport::app_attest::{APPLE_ROOT_KEY_HASH, IOS_APP_ID_HASH};
 use zkpassport::commitments::{age_commitment, bind_commitment};
 use zkpassport::constants::{
-    APP_ATTEST_ENV_PRODUCTION, ATTESTED_ID_CAPSULE_SLOT, FACE_MATCH_MODE_STRICT, PI_PARAMS_START,
-    PROOF_FIELDS, VERIFICATION_METHOD_ATTESTED_CAPTURE_IOS, VK_FIELDS,
+    APP_ATTEST_ENV_PRODUCTION, ATTESTED_ID_CAPSULE_SLOT, FACE_MATCH_CAPSULE_SLOT,
+    FACE_MATCH_MODE_STRICT, PI_PARAMS_START, PROOF_FIELDS, VERIFICATION_METHOD_ATTESTED_CAPTURE_IOS,
+    VERIFICATION_METHOD_UIDAI_AADHAAR, VK_FIELDS,
 };
 use zkpassport::face_match::FaceMatch;
 use zkpassport::fixtures::proof::{
@@ -147,17 +148,35 @@ impl Deployment {
         sender: AztecAddress,
         attestation: FaceMatch,
     ) {
+        self.deliver_face_match_at(sender, ATTESTED_ID_CAPSULE_SLOT, attestation);
+    }
+
+    /// Stores the face match capsule of a proof that carries a face match for `sender`
+    pub unconstrained fn deliver_face_match(
+        &mut self,
+        sender: AztecAddress,
+        face_match: FaceMatch,
+    ) {
+        self.deliver_face_match_at(sender, FACE_MATCH_CAPSULE_SLOT, face_match);
+    }
+
+    unconstrained fn deliver_face_match_at(
+        &mut self,
+        sender: AztecAddress,
+        slot: Field,
+        face_match: FaceMatch,
+    ) {
         let credentials = self.credentials;
         let payload = [
-            attestation.root_key_leaf,
-            attestation.environment as Field,
-            attestation.app_id_hash,
-            attestation.integrity_public_key_hash,
-            attestation.mode as Field,
-            attestation.revocation_root,
+            face_match.root_key_leaf,
+            face_match.environment as Field,
+            face_match.app_id_hash,
+            face_match.integrity_public_key_hash,
+            face_match.mode as Field,
+            face_match.revocation_root,
         ];
         self.env.utility_context_at(credentials, |_| {
-            capsules::store(credentials, ATTESTED_ID_CAPSULE_SLOT, payload, sender);
+            capsules::store(credentials, slot, payload, sender);
         });
     }
 
@@ -301,7 +320,8 @@ fn swap_commitment(mut blob: [Field; 585], from: Field, to: Field) -> [Field; 58
     blob
 }
 
-/// The attestation of an ID read by the camera of ZKPassport's iOS app, as its proof commits it
+/// A strict face match of ZKPassport's iOS app, as a proof commits it: the attestation of an ID read
+/// by its camera, or the face match of a proof that asks for one
 pub fn ios_attestation() -> FaceMatch {
     FaceMatch {
         root_key_leaf: APPLE_ROOT_KEY_HASH,
@@ -317,16 +337,38 @@ pub fn ios_attestation() -> FaceMatch {
 /// attestation's commitment comes first among the param commitments, and the verification method
 /// is the iOS camera's. TXE doesn't verify the recursion, so the public inputs are all that change.
 pub fn read_by_camera(blob: [Field; 586], attestation: FaceMatch) -> [Field; 587] {
+    with_verification_method(
+        with_commitment_first(blob, attestation.attested_id_commitment()),
+        VERIFICATION_METHOD_ATTESTED_CAPTURE_IOS,
+    )
+}
+
+/// `blob`, a proof of 6 subproofs, as a proof of 7 that also carries `face_match`
+pub fn with_face_match(blob: [Field; 586], face_match: FaceMatch) -> [Field; 587] {
+    with_commitment_first(blob, face_match.commitment())
+}
+
+/// `blob` as the proof of an Aadhaar asking the same: an outer_aadhaar_count_N proof has the layout
+/// of the outer_count_(N + 2) one, and states verification method 101
+pub fn of_an_aadhaar<let N: u32>(blob: [Field; N]) -> [Field; N] {
+    with_verification_method(blob, VERIFICATION_METHOD_UIDAI_AADHAAR)
+}
+
+fn with_commitment_first(blob: [Field; 586], commitment: Field) -> [Field; 587] {
     let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
-    let mut attested = [0; 587];
+    let mut extended = [0; 587];
     for i in 0..params_start {
-        attested[i] = blob[i];
+        extended[i] = blob[i];
     }
-    attested[params_start] = attestation.attested_id_commitment();
+    extended[params_start] = commitment;
     for i in params_start..586 {
-        attested[i + 1] = blob[i];
+        extended[i + 1] = blob[i];
     }
-    // The last public input, before the blob's final field
-    attested[585] = VERIFICATION_METHOD_ATTESTED_CAPTURE_IOS;
-    attested
+    extended
+}
+
+// The verification method is the last public input, before the blob's final field
+fn with_verification_method<let N: u32>(mut blob: [Field; N], method: Field) -> [Field; N] {
+    blob[N - 2] = method;
+    blob
 }

@@ -24,6 +24,13 @@ stashes the device's attestation, the proof result's `committedInputs.attested_i
 unique identifiers, so on a policy that each passport claims once, an ID can claim once by each
 read.
 
+Every policy accepts an Aadhaar, as an ID its issuer signed (tier 1), like a chip read. ZKPassport's
+app adds a strict face match to each Aadhaar proof, so an Aadhaar claims a policy of age and
+sanctions through `claim_age_and_sanctions_with_face_match`, which asks for a strict face match too
+and takes the face match from its capsule (`FACE_MATCH_CAPSULE_SLOT`, 4). A chip read whose request
+asked for a strict face match can claim through it as well. An Aadhaar has its own unique
+identifier.
+
 A policy with custom data only issues its credential for a proof bound to that data as well as to
 the user: the ZKPassport request binds it as `custom_data`, byte for byte.
 
