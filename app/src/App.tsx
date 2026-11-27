@@ -4,6 +4,7 @@ import { getIdFromChain } from "@zkpassport/utils"
 import { useCallback, useEffect, useState } from "react"
 import { shortAddress } from "./account"
 import { MARKETS, type Market } from "./markets"
+import { TERMS, termsDigest } from "./terms"
 import { FortunaWallet, type GateMode } from "./wallet"
 
 type Side = "YES" | "NO"
@@ -32,6 +33,10 @@ export function App() {
   const [claim, setClaim] = useState<Claim>({ status: "idle" })
   const [orders, setOrders] = useState<Record<number, OrderState>>({})
   const [counts, setCounts] = useState<Counts>({})
+  const [termsAccepted, setTermsAccepted] = useState(false)
+  // The digest of the terms this page shows, and of the ones the relayer's policies bind
+  const [digest, setDigest] = useState<string | undefined>()
+  const [policyDigest, setPolicyDigest] = useState<string | undefined>()
 
   const account = wallet?.address.toString()
 
@@ -65,15 +70,23 @@ export function App() {
           relayer: string
           sourceChain: string
           network: AztecNetwork | null
+          termsDigest: string
         }) => {
           setSourceChain(body.sourceChain)
           setNetwork(body.network)
+          setPolicyDigest(body.termsDigest)
           setWallet(await FortunaWallet.connect(body))
         },
       )
       .catch((error: unknown) =>
         setWalletError(error instanceof Error ? error.message : String(error)),
       )
+  }, [])
+
+  useEffect(() => {
+    termsDigest(TERMS)
+      .then(setDigest)
+      .catch(() => setDigest(undefined))
   }, [])
 
   useEffect(() => {
@@ -208,16 +221,30 @@ export function App() {
                   Also accept ZKPassport's mock passports
                 </span>
               </label>
+              <Terms accepted={termsAccepted} digest={digest} onChange={setTermsAccepted} />
               <GateAction
                 account={account}
                 network={network}
                 claim={claim}
+                terms={
+                  !digest || !policyDigest
+                    ? "checking"
+                    : digest !== policyDigest
+                      ? "mismatch"
+                      : termsAccepted
+                        ? "accepted"
+                        : "unaccepted"
+                }
                 verifier={
-                  account && network ? (
+                  account && network && digest ? (
                     <VerifyWithZKPassport
                       purpose="Prove you're 18 or older to trade on Fortuna"
                       query={{ age: { min: 18 } }}
-                      bind={{ account: account as `0x${string}`, chainId: getIdFromChain(network) }}
+                      bind={{
+                        account: account as `0x${string}`,
+                        chainId: getIdFromChain(network),
+                        data: digest,
+                      }}
                       mode="compressed"
                       // Sepolia's registries, which the testnet's ZKPassport registry mirrors, take
                       // the SDK's dev mode; the credentials contract decides whether mock passports
@@ -247,10 +274,37 @@ export function App() {
   )
 }
 
+function Terms(props: {
+  accepted: boolean
+  digest: string | undefined
+  onChange: (accepted: boolean) => void
+}) {
+  return (
+    <div className="terms">
+      <pre className="terms-text">{TERMS}</pre>
+      <label className="terms-accept" htmlFor="terms-accept">
+        <input
+          id="terms-accept"
+          type="checkbox"
+          checked={props.accepted}
+          onChange={(event) => props.onChange(event.target.checked)}
+        />
+        <span>I accept these terms. My passport proof will be bound to them.</span>
+      </label>
+      {props.digest && (
+        <p className="terms-digest" title={`SHA-256 ${props.digest}`}>
+          SHA-256 <span className="mono">{props.digest.slice(0, 8)}…</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
 function GateAction(props: {
   account: string | undefined
   network: AztecNetwork | null
   claim: Claim
+  terms: "checking" | "mismatch" | "unaccepted" | "accepted"
   verifier: React.ReactNode
 }) {
   if (!props.account) {
@@ -264,9 +318,18 @@ function GateAction(props: {
       </p>
     )
   }
+  if (props.terms === "mismatch") {
+    return (
+      <p className="notice refused">
+        The relayer's credentials contracts bind other terms. Restart the relayer from this
+        checkout.
+      </p>
+    )
+  }
   return (
     <div className="gate-action">
-      {props.verifier}
+      {props.terms === "accepted" && props.verifier}
+      {props.terms === "unaccepted" && <p className="notice">Accept the terms to verify.</p>}
       {props.claim.status === "claiming" && (
         <Status text="Fortuna's relayer is claiming your credential on Aztec…" />
       )}

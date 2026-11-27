@@ -25,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import FortunaMarketJson from "../../target/fortuna_market_contract-FortunaMarket.json" with { type: "json" }
 import ZKPassportCredentialsJson from "../../target/zkpassport_credentials_contract-ZKPassportCredentials.json" with { type: "json" }
+import { TERMS, termsDigest } from "../src/terms"
 import { LOCAL_NETWORK_L1_CHAIN_ID, setUpLocalNetworkRegistry } from "./local-network"
 
 // The SDK's ESM build doesn't load in Node: it imports `buffer/` and named exports of a CommonJS
@@ -86,6 +87,8 @@ export class Relayer {
     readonly sourceChain: SourceChain,
     /** The network a proof must be bound to, if ZKPassport can bind one to this network */
     readonly network: AztecNetwork | undefined,
+    /** The digest of the terms the policies bind, which a proof must be bound to as custom data */
+    readonly termsDigest: string,
   ) {}
 
   /**
@@ -124,8 +127,10 @@ export class Relayer {
       await registerZKPassportRegistry(wallet, node, config.registryAddress)
     }
 
+    // Policies never change, so contracts made for other terms are never reused
+    const terms = await termsDigest(TERMS)
     const deployments = readDeployments(config.deploymentsPath)
-    const key = `${config.nodeUrl}|${config.domain}`
+    const key = `${config.nodeUrl}|${config.domain}|${terms}`
 
     // Reuses the contract recorded under `name` while the node has it with this artifact's code,
     // and deploys it otherwise, running `setUp` on it before recording it
@@ -168,6 +173,8 @@ export class Relayer {
         `${mode}Credentials`,
         zkpassportCredentials,
         [domainHash, mode === "dev"],
+        // Both policies bind the terms' digest, so a credential records which terms its holder
+        // accepted
         async (contract) => {
           for (const [id, oneClaimPerPassport] of [
             [ADULTS_ONCE, true],
@@ -178,6 +185,7 @@ export class Relayer {
                 id,
                 { kind: AGE_MIN, min_age: 18, nationality: [0, 0, 0] },
                 oneClaimPerPassport,
+                [...new TextEncoder().encode(terms)],
               )
               .send({ from: account, ...(fee ? { fee } : {}), wait: WAIT })
           }
@@ -211,6 +219,7 @@ export class Relayer {
       zkpassport,
       sourceChain,
       network,
+      terms,
     )
   }
 

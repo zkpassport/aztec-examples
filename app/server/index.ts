@@ -22,7 +22,8 @@ createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost")
     if (request.method === "GET" && url.pathname === "/api/network") {
       // The page's wallet reads its credential note itself: it needs the node, the credentials
-      // contracts, the policy and the relayer's account, which tags the notes it sends
+      // contracts, the policy and the relayer's account, which tags the notes it sends. The page
+      // checks its terms against the ones the policies bind.
       return send(response, 200, {
         nodeUrl: NODE_URL,
         credentials: relayer.credentialsAddresses(),
@@ -31,6 +32,7 @@ createServer(async (request, response) => {
         relayer: relayer.address(),
         sourceChain: relayer.sourceChain,
         network: relayer.network ?? null,
+        termsDigest: relayer.termsDigest,
       })
     }
     if (request.method === "POST" && url.pathname === "/api/claim") {
