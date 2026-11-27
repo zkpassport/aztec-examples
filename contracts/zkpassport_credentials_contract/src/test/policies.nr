@@ -26,10 +26,24 @@ unconstrained fn a_policy_cannot_be_created_twice() {
     deployment.create_policy(POLICY, Requirement::age_min(18), false);
 }
 
-#[test(should_fail_with = "unknown requirement")]
-unconstrained fn a_policy_with_an_unknown_requirement_fails() {
+#[test(should_fail_with = "no claim function for this requirement")]
+unconstrained fn a_policy_no_claim_function_verifies_fails() {
     let mut deployment = setup();
-    deployment.create_policy(POLICY, Requirement { kind: 9, min_age: 0, nationality: [0; 3] }, true);
+    deployment.create_policy(
+        POLICY,
+        Requirement { min_age: 18, sanctions: false, nationality: "FRA".as_bytes() },
+        true,
+    );
+}
+
+#[test(should_fail_with = "no claim function for this requirement")]
+unconstrained fn a_policy_that_asks_for_nothing_fails() {
+    let mut deployment = setup();
+    deployment.create_policy(
+        POLICY,
+        Requirement { min_age: 0, sanctions: false, nationality: [0; 3] },
+        true,
+    );
 }
 
 #[test(should_fail_with = "uninitialized PublicImmutable")]
@@ -45,7 +59,7 @@ unconstrained fn a_claim_under_a_policy_nobody_created_fails() {
     );
 }
 
-#[test(should_fail_with = "not a nationality policy")]
+#[test(should_fail_with = "policy asks for another proof")]
 unconstrained fn a_claim_of_another_kind_fails() {
     let mut deployment = setup();
     deployment.create_policy(POLICY, Requirement::age_min(18), true);
