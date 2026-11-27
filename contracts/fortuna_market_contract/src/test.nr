@@ -60,6 +60,7 @@ unconstrained fn setup() -> (TestEnvironment, AztecAddress, AztecAddress) {
                 policy_id,
                 Requirement::age_min(18),
                 true,
+                false,
                 [0; 64],
             ),
         );

@@ -8,7 +8,9 @@ use aztec::macros::aztec;
 /// credential note for that policy, which other contracts check with `assert_has_credential`.
 #[aztec]
 pub contract ZKPassportCredentials {
-    use crate::bound::{pack_custom_data, unpack_custom_data, verify_bound};
+    use crate::bound::{
+        pack_custom_data, unpack_custom_data, verify_bound, verify_bound_camera_read,
+    };
     use aztec::{
         macros::{functions::{external, initializer, internal}, notes::note, storage::storage},
         messages::delivery::MessageDelivery,
@@ -76,12 +78,17 @@ pub contract ZKPassportCredentials {
     }
 
     /// A policy: the requirement its credential stands for, whether each passport earns the
-    /// credential once or can claim it again, as in testing, and the custom data a proof must be
-    /// bound to, all zeros for none.
+    /// credential once or can claim it again, as in testing, whether an ID read by the camera of
+    /// ZKPassport's app earns it as well as one read from its chip, and the custom data a proof must
+    /// be bound to, all zeros for none.
+    ///
+    /// A camera read and a chip read of the same ID have different unique identifiers, so with
+    /// `one_claim_per_passport` an ID can earn the credential once by each read.
     #[derive(Eq, Packable)]
     pub struct Policy {
         requirement: Requirement,
         one_claim_per_passport: bool,
+        accepts_camera_read: bool,
         // Packed with `pack_custom_data`
         custom_data: [Field; 3],
     }
@@ -126,6 +133,7 @@ pub contract ZKPassportCredentials {
         policy_id: Field,
         requirement: Requirement,
         one_claim_per_passport: bool,
+        accepts_camera_read: bool,
         custom_data: [u8; CUSTOM_DATA_LENGTH],
     ) {
         assert(
@@ -138,6 +146,7 @@ pub contract ZKPassportCredentials {
             Policy {
                 requirement,
                 one_claim_per_passport,
+                accepts_camera_read,
                 custom_data: pack_custom_data(custom_data),
             },
         );
@@ -242,6 +251,34 @@ pub contract ZKPassportCredentials {
 
         let query = Query::new().age_min(policy.requirement.min_age).sanctions();
         let verified = verify_bound(
+            self.context,
+            self.msg_sender(),
+            user,
+            self.internal.service(),
+            unpack_custom_data(policy.custom_data),
+            query,
+        );
+
+        self.internal.issue(
+            user,
+            policy_id,
+            policy.one_claim_per_passport,
+            verified.unique_identifier,
+        );
+    }
+
+    /// As `claim_age_and_sanctions`, with the proof of an ID read by the camera of ZKPassport's app
+    /// and attested by the device (outer_attested_id_count_7, param commitments = {attested ID,
+    /// age(min_age, 0), bind(user), sanctions}), for a policy that accepts camera reads. The
+    /// device's attestation rides in its own capsule.
+    #[external("private")]
+    fn claim_age_and_sanctions_from_camera_read(user: AztecAddress, policy_id: Field) {
+        let policy = self.storage.policies.at(policy_id).read();
+        assert(policy.requirement.asks_for(true, true, false), "policy asks for another proof");
+        assert(policy.accepts_camera_read, "policy doesn't accept camera reads");
+
+        let query = Query::new().age_min(policy.requirement.min_age).sanctions();
+        let verified = verify_bound_camera_read(
             self.context,
             self.msg_sender(),
             user,

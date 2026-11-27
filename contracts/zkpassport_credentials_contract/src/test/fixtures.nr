@@ -5,8 +5,13 @@ use aztec::{
     protocol::{address::AztecAddress, traits::{FromField, ToField}},
     test::helpers::test_environment::TestEnvironment,
 };
+use zkpassport::app_attest::{APPLE_ROOT_KEY_HASH, IOS_APP_ID_HASH};
 use zkpassport::commitments::{age_commitment, bind_commitment};
-use zkpassport::constants::{PI_PARAMS_START, PROOF_FIELDS, VK_FIELDS};
+use zkpassport::constants::{
+    APP_ATTEST_ENV_PRODUCTION, ATTESTED_ID_CAPSULE_SLOT, FACE_MATCH_MODE_STRICT, PI_PARAMS_START,
+    PROOF_FIELDS, VERIFICATION_METHOD_ATTESTED_CAPTURE_IOS, VK_FIELDS,
+};
+use zkpassport::face_match::FaceMatch;
 use zkpassport::fixtures::proof::{
     AGE_FIXTURE_BIND_ADDRESS, AGE_FIXTURE_CERT_ROOT, AGE_FIXTURE_CIRCUIT_ROOT,
     AGE_FIXTURE_CIRCUIT_VERSION, AGE_FIXTURE_CURRENT_DATE, AGE_FIXTURE_VK_HASH,
@@ -49,7 +54,13 @@ impl Deployment {
         requirement: Requirement,
         one_claim_per_passport: bool,
     ) {
-        self.create_policy_bound_to(policy_id, requirement, one_claim_per_passport, NO_CUSTOM_DATA);
+        self.create_policy_with(
+            policy_id,
+            requirement,
+            one_claim_per_passport,
+            false,
+            NO_CUSTOM_DATA,
+        );
     }
 
     /// Creates policy `policy_id`, whose proofs must be bound to `custom_data`, as the deployer
@@ -60,12 +71,40 @@ impl Deployment {
         one_claim_per_passport: bool,
         custom_data: [u8; CUSTOM_DATA_LENGTH],
     ) {
+        self.create_policy_with(policy_id, requirement, one_claim_per_passport, false, custom_data);
+    }
+
+    /// Creates policy `policy_id`, without custom data, that also accepts IDs read by the camera
+    pub unconstrained fn create_policy_accepting_camera_reads(
+        &mut self,
+        policy_id: Field,
+        requirement: Requirement,
+        one_claim_per_passport: bool,
+    ) {
+        self.create_policy_with(
+            policy_id,
+            requirement,
+            one_claim_per_passport,
+            true,
+            NO_CUSTOM_DATA,
+        );
+    }
+
+    pub unconstrained fn create_policy_with(
+        &mut self,
+        policy_id: Field,
+        requirement: Requirement,
+        one_claim_per_passport: bool,
+        accepts_camera_read: bool,
+        custom_data: [u8; CUSTOM_DATA_LENGTH],
+    ) {
         let _ = self.env.call_public(
             self.deployer,
             ZKPassportCredentials::at(self.credentials).create_policy(
                 policy_id,
                 requirement,
                 one_claim_per_passport,
+                accepts_camera_read,
                 custom_data,
             ),
         );
@@ -99,6 +138,26 @@ impl Deployment {
                     sender,
                 );
             }
+        });
+    }
+
+    /// Stores the attested ID capsule of a camera-read ID's proof for `sender`
+    pub unconstrained fn deliver_attestation(
+        &mut self,
+        sender: AztecAddress,
+        attestation: FaceMatch,
+    ) {
+        let credentials = self.credentials;
+        let payload = [
+            attestation.root_key_leaf,
+            attestation.environment as Field,
+            attestation.app_id_hash,
+            attestation.integrity_public_key_hash,
+            attestation.mode as Field,
+            attestation.revocation_root,
+        ];
+        self.env.utility_context_at(credentials, |_| {
+            capsules::store(credentials, ATTESTED_ID_CAPSULE_SLOT, payload, sender);
         });
     }
 
@@ -240,4 +299,34 @@ fn swap_commitment(mut blob: [Field; 585], from: Field, to: Field) -> [Field; 58
     }
     assert(swapped == 1);
     blob
+}
+
+/// The attestation of an ID read by the camera of ZKPassport's iOS app, as its proof commits it
+pub fn ios_attestation() -> FaceMatch {
+    FaceMatch {
+        root_key_leaf: APPLE_ROOT_KEY_HASH,
+        environment: APP_ATTEST_ENV_PRODUCTION,
+        app_id_hash: IOS_APP_ID_HASH,
+        integrity_public_key_hash: 0,
+        mode: FACE_MATCH_MODE_STRICT,
+        revocation_root: 0,
+    }
+}
+
+/// `blob`, a proof of 6 subproofs, as the same proof of an ID read by the iOS app's camera: the
+/// attestation's commitment comes first among the param commitments, and the verification method
+/// is the iOS camera's. TXE doesn't verify the recursion, so the public inputs are all that change.
+pub fn read_by_camera(blob: [Field; 586], attestation: FaceMatch) -> [Field; 587] {
+    let params_start = VK_FIELDS + PROOF_FIELDS + PI_PARAMS_START;
+    let mut attested = [0; 587];
+    for i in 0..params_start {
+        attested[i] = blob[i];
+    }
+    attested[params_start] = attestation.attested_id_commitment();
+    for i in params_start..586 {
+        attested[i + 1] = blob[i];
+    }
+    // The last public input, before the blob's final field
+    attested[585] = VERIFICATION_METHOD_ATTESTED_CAPTURE_IOS;
+    attested
 }

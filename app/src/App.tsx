@@ -1,9 +1,10 @@
 import type { AztecNetwork, ProofResult } from "@zkpassport/sdk"
 import { VerifyWithZKPassport } from "@zkpassport/ui/react"
-import { getIdFromChain } from "@zkpassport/utils"
+import { getIdFromChain, VerificationTier } from "@zkpassport/utils"
 import { useCallback, useEffect, useState } from "react"
 import { shortAddress } from "./account"
 import { MARKETS, type Market } from "./markets"
+import { type IdRead, outerProof } from "./proof"
 import { TERMS, termsDigest } from "./terms"
 import { FortunaWallet, type GateMode } from "./wallet"
 
@@ -18,7 +19,7 @@ type OrderState =
 type Claim =
   | { status: "idle" }
   | { status: "claiming" }
-  | { status: "claimed"; txHash: string }
+  | { status: "claimed"; txHash: string; read: IdRead }
   | { status: "failed"; message: string }
 
 type Counts = Record<number, { yes: number; no: number }>
@@ -123,8 +124,8 @@ export function App() {
 
   // The hosted flow hands back the proofs; the relayer proves the claim with the outer one
   async function claimCredential(proofs: ProofResult[]): Promise<boolean> {
-    const proof = proofs.find((candidate) => candidate.name?.startsWith("outer_count_"))
-    if (!proof) {
+    const outer = outerProof(proofs)
+    if (!outer) {
       setClaim({
         status: "failed",
         message: "ZKPassport sent no proof an Aztec contract verifies.",
@@ -135,7 +136,7 @@ export function App() {
     const response = await fetch("/api/claim", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, user: account, proof }),
+      body: JSON.stringify({ mode, user: account, proof: outer.proof }),
     })
     const body = (await response.json()) as { txHash?: string; error?: string }
     if (!body.txHash) {
@@ -145,7 +146,7 @@ export function App() {
       })
       return false
     }
-    setClaim({ status: "claimed", txHash: body.txHash })
+    setClaim({ status: "claimed", txHash: body.txHash, read: outer.read })
     await refreshCredential()
     return true
   }
@@ -197,7 +198,10 @@ export function App() {
                 and not on a sanctions list, and nothing else.
               </p>
               {claim.status === "claimed" && (
-                <p className="mono">Claimed in {shortHash(claim.txHash)}</p>
+                <p className="mono">
+                  Claimed in {shortHash(claim.txHash)} with an ID read{" "}
+                  {claim.read === "chip" ? "from its chip" : "by the phone's camera"}
+                </p>
               )}
             </div>
           ) : (
@@ -252,6 +256,11 @@ export function App() {
                       service={{
                         devMode: sourceChain === "ethereum_sepolia",
                         uniqueIdentifierType: "non-salted",
+                        // An ID read from its chip, or by the camera of ZKPassport's app
+                        allowedVerificationMethods: [
+                          VerificationTier.GOVERNMENT_SIGNED,
+                          VerificationTier.DEVICE_ATTESTED,
+                        ],
                       }}
                       style={{ label: "Verify with ZKPassport" }}
                       onSuccess={({ proofs }) => claimCredential(proofs)}

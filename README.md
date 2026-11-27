@@ -5,7 +5,7 @@ Example Aztec contracts that verify ZKPassport proofs with the ZKPassport Aztec 
 
 | Contract                                    | What it shows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `contracts/zkpassport_credentials_contract` | Private ZKPassport credentials. The deployer sets the domain its requests come from and whether it also accepts ZKPassport's mock passports, and creates policies with `create_policy`. A policy is a requirement (a minimum age, not being on the sanctions lists, both, or a nationality), whether each passport claims its credential once (a uniqueness nullifier per policy) or can claim it again, as in testing, and optionally 64 bytes of custom data the proof must be bound to, such as the SHA-256 digest of terms the user accepts. |
+| `contracts/zkpassport_credentials_contract` | Private ZKPassport credentials. The deployer sets the domain its requests come from and whether it also accepts ZKPassport's mock passports, and creates policies with `create_policy`. A policy is a requirement (a minimum age, not being on the sanctions lists, both, or a nationality), whether each passport claims its credential once (a uniqueness nullifier per policy) or can claim it again, as in testing, whether an ID read by the camera of ZKPassport's app earns it as well as one read from its chip, and optionally 64 bytes of custom data the proof must be bound to, such as the SHA-256 digest of terms the user accepts. |
 | `contracts/fortuna_market_contract`         | Fortuna's market. `place_order` calls the credentials contract's `assert_has_credential` for the sender and the market's policy, so only an account whose wallet holds that credential note can trade.                                                                                                                                                                                                                                                                                                                                           |
 
 A user claims a policy's credential with `claim_age`, `claim_sanctions`, `claim_age_and_sanctions`
@@ -14,6 +14,15 @@ contract's network and mint the user a private credential note of that policy. S
 bound to the user, anyone may submit the transaction, and nothing public names the user. Other
 contracts check the note with `assert_has_credential(user, policy_id)`, and the holder's wallet
 reads it with `has_credential`.
+
+A policy that accepts camera reads also issues its credential through
+`claim_age_and_sanctions_from_camera_read`, which verifies the proof of an ID read by the camera of
+ZKPassport's app and attested by the device (an `outer_attested_id_count_<n>` proof). The client
+stashes the device's attestation, the proof result's `committedInputs.attested_id_ios` or
+`attested_id_android`, in the attested ID capsule (`ATTESTED_ID_CAPSULE_SLOT`, 5), as the SDK's
+`getAztecVerifierParameters` does. A camera read and a chip read of the same ID have different
+unique identifiers, so on a policy that each passport claims once, an ID can claim once by each
+read.
 
 A policy with custom data only issues its credential for a proof bound to that data as well as to
 the user: the ZKPassport request binds it as `custom_data`, byte for byte.
